@@ -132,10 +132,19 @@ values through Sites; never commit `.env`.
 - `API_KEY_ENCRYPTION_KEY` (a high-entropy hosted secret used only to seal
   personal key sessions)
 - `GITHUB_APP_ID`
+- `GITHUB_APP_SLUG`
 - `GITHUB_APP_CLIENT_ID`
 - `GITHUB_APP_CLIENT_SECRET`
 - `GITHUB_APP_PRIVATE_KEY`
 - `PATCH_ENCRYPTION_KEY`
+
+The GitHub App is installed only on repositories selected by their owner. Its
+repository permissions are **Metadata: read**, **Contents: write**, and **Pull
+requests: write**; it requests no Workflows, Administration, Secrets, or
+organization permissions. Import requests mint a repository-scoped token
+downscoped to **Contents: read**. Only an explicit, reviewed “Create draft PR”
+action may mint a separate short-lived token with Contents and Pull requests
+write access. Installation tokens are never returned to browser JavaScript.
 
 The Site declares D1 as `DB` and R2 as `ARTIFACTS`. The production release must
 pass these checks before imported code execution is enabled:
