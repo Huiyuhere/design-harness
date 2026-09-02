@@ -1,6 +1,6 @@
-# Agent Harness
+# Design Harness
 
-Agent Harness is a code-native design canvas for React applications. It imports
+Design Harness is a code-native design canvas for React applications. It imports
 an application at an immutable Git SHA, renders its routes as frames, maps DOM
 layers back to JSX/CSS, and records validated edits as reversible source
 transactions. The source tree—not a canvas override—is the design truth.
@@ -43,15 +43,29 @@ The first working slice includes:
   memory, and artifact metadata;
 - R2 binding declarations for encrypted patch bundles and frame artifacts;
 - WebContainer isolation checks and a single-instance runtime boundary;
+- a bounded public-repository archive runtime that mounts one source tree,
+  installs only after an explicit trust prompt, and runs one dev server;
+- linked desktop (1440×900), tablet (768×1024), and mobile (390×844)
+  variants that share route source while retaining independent viewport state;
+- an adaptive live-frame scheduler: zero iframes below 65% zoom, normally two
+  and never more than three; inactive frames are explicitly labeled static;
+- Vite window-scroll snapshots restored through a preview-only, origin-checked
+  bridge; arbitrary React state and Next.js demotion restoration still require
+  deterministic named fixtures;
+- a direct mapped-source editor for copywriting and JSX/TSX changes, with
+  syntax validation before the file is written to the running source tree;
+- an optional, manually installed GitHub Actions workflow for Playwright
+  screenshots, browser smoke checks, and artifact collection;
 - a bounded OpenAI Responses API proxy that streams responses and only permits
   inspect/propose tools. The agent cannot apply or publish a patch.
 
-Private GitHub App installation, full repository archive execution, full DOM
-instrumentation, real HMR validation against imported apps, encrypted R2 bundle
-persistence, and explicit push/PR are the next integration milestones. Public
-repository metadata, routes, and brand tokens can already be imported without
-running dependency scripts. Private source remains disabled until hosted GitHub
-App credentials and the production WebContainer feasibility gate are configured.
+Private GitHub App installation, DOM-to-source instrumentation, generated WebP
+thumbnails, screenshot-baseline pixel diffing, HMR geometry/computed-style
+proof, encrypted R2 bundle persistence, and explicit push/PR remain integration
+milestones. Public repository archives can run after trust is confirmed. Direct
+source edits affect the in-browser runtime only until a future draft commit and
+explicit push flow is connected. The product never awards a pixel-verified
+badge from the canvas or from static representations.
 
 ## Safety model
 
@@ -86,6 +100,29 @@ pnpm test
 pnpm build
 node --test tests/rendered-html.test.mjs
 ```
+
+## Preview and production-verification states
+
+- **Live source synchronized** means a real route is running in a WebContainer
+  iframe from the current in-browser source tree. It is interactive and
+  scrollable, but is not production proof.
+- **Thumbnail may be stale** means the card is static and cannot scroll. The
+  current release uses a labeled static representation while generated WebP
+  capture is completed.
+- **Production pixel verified** is reserved for a pushed, exact Git SHA that
+  passes the repository-installed Playwright workflow and approved pixel-diff
+  thresholds. The included workflow currently captures screenshots and runs
+  browser gates; baseline diff ingestion is not yet connected, so this badge
+  remains disabled.
+
+GitHub Actions requires a push and can queue for several minutes. Private
+repositories have plan-dependent shared allowances and may incur charges.
+Repository source and trusted build scripts execute on a GitHub-hosted Linux
+runner, which differs from macOS and actual iOS Safari. Actions can also be
+disabled, blocked by policy or budget, unavailable to forks, or missing the
+manually installed workflow. Artifacts expire. When verification is unavailable,
+editing remains usable, but the project is shown as **Not verified** and no
+silent AI-review fallback is permitted.
 
 ## Hosted configuration
 
@@ -126,6 +163,6 @@ with approval instead of direct manipulation.
 
 ## License and attribution
 
-Agent Harness is MIT licensed. Interaction concepts were informed by the
+Design Harness is MIT licensed. Interaction concepts were informed by the
 MIT-licensed [Design Canvas](https://github.com/Huiyuhere/design-canvas); see
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

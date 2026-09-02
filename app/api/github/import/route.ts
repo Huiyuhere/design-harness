@@ -16,7 +16,7 @@ function githubHeaders() {
 
 async function githubJson(url: string) {
   const response = await fetch(url, { headers: githubHeaders() });
-  if (response.status === 404) throw new Error("Repository not found. Private repositories require the Agent Harness GitHub App.");
+  if (response.status === 404) throw new Error("Repository not found. Private repositories require the Design Harness GitHub App.");
   if (!response.ok) throw new Error(`GitHub returned ${response.status}. Try again after checking access or rate limits.`);
   return response.json();
 }

@@ -10,13 +10,13 @@ async function render() {
   }, { waitUntil() {}, passThroughOnException() {} });
 }
 
-test("server-renders Agent Harness with isolation headers", async () => {
+test("server-renders Design Harness with isolation headers", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cross-origin-opener-policy"), "same-origin");
   assert.equal(response.headers.get("cross-origin-embedder-policy"), "credentialless");
   const html = await response.text();
-  assert.match(html, /Agent Harness/);
+  assert.match(html, /Design Harness/);
   assert.match(html, /Code-native design/);
   assert.doesNotMatch(html, /codex-preview|react-loading-skeleton/);
 });

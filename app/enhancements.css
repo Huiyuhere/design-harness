@@ -101,3 +101,43 @@
   .intelligence-actions { grid-template-columns: 1fr; }
   .intelligence-stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
+
+/* Responsive live preview runtime */
+.viewport-pill { padding: 2px 5px; border-radius: 999px; background: #ececf7; color: #555b83 !important; font-size: 7px !important; text-transform: capitalize; }
+.frame-label .pin { border: 0; background: transparent; color: #9a9a95; padding: 3px; border-radius: 5px; display: grid; place-items: center; }
+.frame-label .pin.active { color: #315efb; background: #e8edff; }
+.live-iframe-viewport { position: relative; overflow: hidden; background: white; }
+.live-iframe-viewport iframe { display: block; border: 0; transform-origin: top left; background: white; }
+.representation-live { box-shadow: 0 0 0 1px #5f7cff, 0 10px 28px rgba(43,67,153,.12); }
+.representation-thumbnail { background: #f7f7f3; }
+.thumbnail-cover { position: absolute; inset: 24px 0 0; z-index: 12; display: flex; flex-direction: column; justify-content: flex-end; align-items: flex-start; padding: 14px; color: #5d5d58; background: linear-gradient(180deg, rgba(246,246,242,.2), rgba(246,246,242,.92)); pointer-events: none; }
+.thumbnail-cover span { font-size: 9px; font-weight: 750; }
+.thumbnail-cover small { margin-top: 2px; font-size: 7px; }
+.verification-state { font-size: 7px; font-weight: 700; color: #777872 !important; }
+.verification-state.source_synchronized { color: #16835e !important; }
+.verification-state.pixel_verified { color: #315efb !important; }
+.thumbnail-dot { width: 6px; height: 6px; border-radius: 50%; background: #b7b7b1; }
+.runtime-card { width: calc(100% - 24px); margin: 8px 12px; border: 1px solid #d5d5cf; border-radius: 10px; background: #fff; padding: 10px; display: flex; gap: 9px; text-align: left; align-items: flex-start; }
+.runtime-card > div { min-width: 0; display: grid; gap: 2px; }.runtime-card strong { font-size: 10px; }.runtime-card span { font-size: 8px; color: #777872; line-height: 1.35; }
+.runtime-card.ready { border-color: #7fcdb1; background: #f2fbf7; color: #08714d; }.runtime-card.error { border-color: #e4b8b0; background: #fff7f5; color: #9f3527; }.runtime-card:disabled { opacity: .72; }
+.copywrite-scope { display: flex; gap: 6px; align-items: flex-start; padding: 7px 8px; margin-bottom: 7px; border-radius: 7px; background: #eef2ff; color: #46527d; font-size: 8px; line-height: 1.35; }
+.source-editor-label { display: grid; gap: 2px; margin: 10px 0 6px; }.source-editor-label span { font-size: 10px; font-weight: 750; }.source-editor-label small { color: #777872; font-size: 8px; }
+.source-editor { width: 100%; min-height: 340px; resize: vertical; border: 1px solid #32343a; border-radius: 9px; background: #1f2126; color: #e8e8e5; padding: 11px; font: 9px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; outline: 0; tab-size: 2; }
+.source-actions { display: flex; justify-content: space-between; gap: 8px; margin-top: 8px; }.source-actions button { min-height: 31px; border: 1px solid #d7d7d2; border-radius: 7px; background: white; padding: 0 9px; display: flex; align-items: center; gap: 6px; }.source-actions .primary { border-color: #202225; background: #202225; color: white; }
+
+/* Focus preview */
+.focus-preview-backdrop { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; background: rgba(20,22,27,.52); backdrop-filter: blur(6px); }
+.focus-preview { width: min(94vw, 1480px); height: min(92vh, 980px); border-radius: 17px; overflow: hidden; background: #f4f4f1; box-shadow: 0 30px 90px rgba(0,0,0,.3); display: grid; grid-template-rows: auto minmax(0,1fr) auto; }
+.focus-preview header, .focus-preview footer { display: flex; justify-content: space-between; align-items: center; padding: 11px 14px; background: white; border-bottom: 1px solid #deded8; }
+.focus-preview header div { display: grid; gap: 2px; }.focus-preview header strong { font-size: 12px; }.focus-preview header span, .focus-preview footer { font-size: 9px; color: #777872; }
+.focus-preview header button { border: 0; background: #eee; width: 28px; height: 28px; border-radius: 7px; }.focus-iframe-shell { overflow: auto; display: grid; place-items: start center; padding: 18px; }.focus-iframe-shell iframe { border: 1px solid #d0d0ca; background: white; box-shadow: 0 10px 30px rgba(0,0,0,.1); flex: none; }
+.focus-preview footer { border-top: 1px solid #deded8; border-bottom: 0; }.focus-preview footer span { color: #16835e; font-weight: 700; }
+
+/* Verification disclosure */
+.verification-modal { width: min(780px, calc(100vw - 32px)); max-height: min(88vh, 900px); }.verification-banner { display: flex; gap: 10px; padding: 12px; border-radius: 10px; background: #fff5e8; color: #88521c; }.verification-banner.passed { background: #edf8f4; color: #08714d; }
+.verification-banner > div { display: grid; gap: 2px; }.verification-banner strong { font-size: 11px; }.verification-banner span { font-size: 9px; }
+.actions-limitations { margin-top: 12px; padding: 12px; border: 1px solid #e3e0d8; border-radius: 10px; background: #faf9f5; }.actions-limitations > strong { font-size: 10px; }.actions-limitations p { display: flex; gap: 7px; align-items: flex-start; margin: 7px 0 0; font-size: 8px; line-height: 1.4; color: #666760; }.actions-limitations svg { flex: none; color: #b56e1d; margin-top: 1px; }
+.verification-facts { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; margin-top: 12px; }.verification-facts article { padding: 10px; border: 1px solid #deded8; border-radius: 9px; display: grid; gap: 4px; }.verification-facts strong { font-size: 9px; }.verification-facts span { font-size: 8px; line-height: 1.4; color: #777872; }
+.workflow-install { display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; margin-top: 12px; padding: 11px; border-radius: 10px; background: #eef2ff; color: #394b88; }.workflow-install div { display: grid; gap: 2px; }.workflow-install strong { font-size: 10px; }.workflow-install span { font-size: 8px; }.workflow-install a { border-radius: 7px; background: #315efb; color: white; text-decoration: none; padding: 7px 9px; font-size: 8px; font-weight: 750; }
+
+@media (max-width: 900px) { .verification-facts { grid-template-columns: 1fr; } }

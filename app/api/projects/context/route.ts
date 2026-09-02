@@ -110,8 +110,10 @@ export async function POST(request: NextRequest) {
         return jsonError(result.status === 401 ? "Your OpenAI key is no longer valid. Connect it again." : "OpenAI could not generate the document proposal.", result.status === 429 ? 429 : 502, headers);
       }
       const proposals: DocumentProposal[] = [];
-      for (const improvement of result.improvements) {
-        const original = result.originals.find((document) => document.kind === improvement.kind)!;
+      const improvements = result.improvements ?? [];
+      const originals = result.originals ?? [];
+      for (const improvement of improvements) {
+        const original = originals.find((document) => document.kind === improvement.kind)!;
         const proposal: DocumentProposal = { id: crypto.randomUUID(), path: original.path, kind: original.kind, baseHash: original.sourceHash, originalContent: original.content, proposedContent: improvement.content, diff: simpleUnifiedDiff(original.path, original.content, improvement.content), rationale: improvement.rationale, status: "pending" };
         await saveProposal(user, input.project, proposal);
         proposals.push(proposal);

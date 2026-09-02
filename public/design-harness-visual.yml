@@ -1,0 +1,42 @@
+# Install this file manually as .github/workflows/design-harness-visual.yml.
+# Design Harness intentionally does not request Workflows write permission.
+# This workflow runs repository code on a GitHub-hosted Linux runner and may
+# consume plan-dependent Actions minutes for private repositories.
+name: Design Harness visual verification
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["design-harness/**"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: design-harness-visual-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with: { persist-credentials: false }
+      - uses: pnpm/action-setup@v4
+        with: { version: 11.19.0 }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22.13.0, cache: pnpm }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm exec playwright install --with-deps chromium webkit firefox
+      - run: pnpm exec playwright test
+        env: { CI: "true" }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: design-harness-visual-evidence-${{ github.sha }}
+          path: |
+            playwright-report
+            test-results
+          retention-days: 7

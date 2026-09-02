@@ -16,7 +16,7 @@ export async function ensureProject(user: RequestUser, project: ProjectIdentity)
   if (existing && existing.owner_id !== user.userId) throw new Error("This project belongs to a different signed-in user.");
   await db.batch([
     db.prepare("INSERT INTO owners (id, email, created_at, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET email = excluded.email, updated_at = excluded.updated_at").bind(user.userId, user.email, stamp, stamp),
-    db.prepare("INSERT INTO projects (id, owner_id, name, repository_full_name, base_sha, draft_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, repository_full_name = excluded.repository_full_name, base_sha = excluded.base_sha, updated_at = excluded.updated_at").bind(project.id, user.userId, project.name, project.repository, project.baseSha, `agent-harness/${project.id}`, stamp, stamp),
+    db.prepare("INSERT INTO projects (id, owner_id, name, repository_full_name, base_sha, draft_branch, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET name = excluded.name, repository_full_name = excluded.repository_full_name, base_sha = excluded.base_sha, updated_at = excluded.updated_at").bind(project.id, user.userId, project.name, project.repository, project.baseSha, `design-harness/${project.id}`, stamp, stamp),
   ]);
 }
 

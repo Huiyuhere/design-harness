@@ -38,6 +38,13 @@ export const routeFrames = sqliteTable("route_frames", {
   x: integer("x").notNull(), y: integer("y").notNull(), thumbnailKey: text("thumbnail_key"), ...timestamps,
 }, (table) => [index("idx_route_frames_project_id").on(table.projectId), uniqueIndex("idx_route_frames_project_route").on(table.projectId, table.route)]);
 
+export const frameVariants = sqliteTable("frame_variants", {
+  id: text("id").primaryKey(), projectId: text("project_id").notNull().references(() => projects.id), frameId: text("frame_id").notNull().references(() => routeFrames.id),
+  profile: text("profile").notNull(), viewportWidth: integer("viewport_width").notNull(), viewportHeight: integer("viewport_height").notNull(), orientation: text("orientation").notNull(),
+  x: integer("x").notNull(), y: integer("y").notNull(), scrollJson: text("scroll_json").notNull(), fixtureJson: text("fixture_json").notNull(), thumbnailKey: text("thumbnail_key"),
+  sourceHash: text("source_hash"), hydrationStatus: text("hydration_status").notNull(), verificationState: text("verification_state").notNull(), ...timestamps,
+}, (table) => [index("idx_frame_variants_project_id").on(table.projectId), uniqueIndex("idx_frame_variants_frame_profile").on(table.frameId, table.profile)]);
+
 export const savedStates = sqliteTable("saved_states", {
   id: text("id").primaryKey(), frameId: text("frame_id").notNull().references(() => routeFrames.id), name: text("name").notNull(), fixtureJson: text("fixture_json").notNull(), screenshotKey: text("screenshot_key"), ...timestamps,
 }, (table) => [index("idx_saved_states_frame_id").on(table.frameId)]);
@@ -85,6 +92,13 @@ export const flowGaps = sqliteTable("flow_gaps", {
   id: text("id").primaryKey(), projectId: text("project_id").notNull().references(() => projects.id), ownerId: text("owner_id").notNull().references(() => owners.id),
   frameId: text("frame_id").notNull(), node: text("node").notNull(), label: text("label").notNull(), role: text("role").notNull(), sourceAnchorJson: text("source_anchor_json").notNull(), computedStyleJson: text("computed_style_json").notNull(), clickCount: integer("click_count").notNull(), suggestedRoute: text("suggested_route").notNull(), screenshotKey: text("screenshot_key"), status: text("status").notNull(), transactionId: text("transaction_id"), firstSeenAt: text("first_seen_at").notNull(), lastClickedAt: text("last_clicked_at").notNull(), ...timestamps,
 }, (table) => [uniqueIndex("idx_flow_gaps_project_frame_node").on(table.projectId, table.frameId, table.node), index("idx_flow_gaps_project_status").on(table.projectId, table.status)]);
+
+export const visualValidationRuns = sqliteTable("visual_validation_runs", {
+  id: text("id").primaryKey(), projectId: text("project_id").notNull().references(() => projects.id), ownerId: text("owner_id").notNull().references(() => owners.id),
+  commitSha: text("commit_sha").notNull(), affectedRoutesJson: text("affected_routes_json").notNull(), status: text("status").notNull(), workflowRunId: text("workflow_run_id"),
+  browserResultsJson: text("browser_results_json").notNull(), pixelDiffRatio: integer("pixel_diff_ppm"), artifactKeysJson: text("artifact_keys_json").notNull(), baselineSha: text("baseline_sha"),
+  trustedAt: text("trusted_at").notNull(), approvedAt: text("approved_at"), failureReason: text("failure_reason"), durationMs: integer("duration_ms"), ...timestamps,
+}, (table) => [index("idx_visual_validation_project_created").on(table.projectId, table.createdAt), index("idx_visual_validation_commit").on(table.commitSha)]);
 
 export const artifacts = sqliteTable("artifacts", {
   id: text("id").primaryKey(), projectId: text("project_id").notNull().references(() => projects.id), kind: text("kind").notNull(), objectKey: text("object_key").notNull(), contentType: text("content_type").notNull(), encrypted: integer("encrypted", { mode: "boolean" }).notNull(), sizeBytes: integer("size_bytes").notNull(), ...timestamps,

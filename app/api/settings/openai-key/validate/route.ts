@@ -28,7 +28,7 @@ export async function POST(request: NextRequest) {
 
   const checks = await Promise.all(REQUIRED_MODELS.map((model) => modelAccess(parsed.data.apiKey, model)));
   if (checks.some((check) => check.status === 401)) return jsonError("OpenAI rejected this key. Check that it is complete and still active.", 401);
-  if (checks.every((check) => !check.ok)) return jsonError("The key is valid but does not have access to the required Agent Harness models.", 422);
+  if (checks.every((check) => !check.ok)) return jsonError("The key is valid but does not have access to the required Design Harness models.", 422);
   const models = checks.filter((check) => check.ok).map((check) => check.model);
   const validatedAt = new Date().toISOString();
   const masked = maskApiKey(parsed.data.apiKey);
