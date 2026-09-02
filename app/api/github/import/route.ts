@@ -3,7 +3,7 @@ import { z } from "zod";
 import { extractBrandTokens, isBrandSource, parseGitHubRepositoryUrl } from "../../../../lib/brand-extractor";
 import { discoverFileRoutes, discoverSourceRoutes } from "../../../../lib/route-discovery";
 import { brandDocuments } from "../../../../lib/brand-documents";
-import { githubInstallationFromRequest, installationAccessToken } from "../../../../lib/github-app";
+import { githubAppFromRequest, githubInstallationFromRequest, installationAccessToken } from "../../../../lib/github-app";
 import { jsonError, requestUser, sameOrigin } from "../../../../lib/request-security";
 
 export const dynamic = "force-dynamic";
@@ -40,8 +40,9 @@ export async function POST(request: NextRequest) {
     if (!sameOrigin(request)) return jsonError("Cross-origin repository imports are not allowed.", 403);
     const body = schema.parse(await request.json());
     const { owner, repository } = parseGitHubRepositoryUrl(body.repositoryUrl);
+    const app = await githubAppFromRequest(request, user);
     const installation = await githubInstallationFromRequest(request, user);
-    const token = installation ? (await installationAccessToken(installation.installationId, repository, "read")).token : undefined;
+    const token = app && installation ? (await installationAccessToken(installation.installationId, repository, app, "read")).token : undefined;
     const repo = await githubJson(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}`, token);
     const [branch, tree] = await Promise.all([
       githubJson(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/branches/${encodeURIComponent(repo.default_branch)}`, token),

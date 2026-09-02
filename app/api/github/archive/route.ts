@@ -1,7 +1,7 @@
 import { NextRequest } from "next/server";
 import { z } from "zod";
 import { parseGitHubRepositoryUrl } from "../../../../lib/brand-extractor";
-import { githubInstallationFromRequest, installationAccessToken } from "../../../../lib/github-app";
+import { githubAppFromRequest, githubInstallationFromRequest, installationAccessToken } from "../../../../lib/github-app";
 import { requestUser, sameOrigin } from "../../../../lib/request-security";
 
 export const dynamic = "force-dynamic";
@@ -22,8 +22,9 @@ export async function GET(request: NextRequest) {
     if (!user) return Response.json({ error: "Sign in before downloading a repository archive." }, { status: 401 });
     const input = querySchema.parse({ repositoryUrl: request.nextUrl.searchParams.get("repositoryUrl"), ref: request.nextUrl.searchParams.get("ref") });
     const { owner, repository } = parseGitHubRepositoryUrl(input.repositoryUrl);
+    const app = await githubAppFromRequest(request, user);
     const installation = await githubInstallationFromRequest(request, user);
-    const token = installation ? (await installationAccessToken(installation.installationId, repository, "read")).token : undefined;
+    const token = app && installation ? (await installationAccessToken(installation.installationId, repository, app, "read")).token : undefined;
     const upstream = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/zipball/${encodeURIComponent(input.ref)}`, { headers: githubHeaders(token), redirect: "follow" });
     if (!upstream.ok || !upstream.body) return Response.json({ error: upstream.status === 404 ? "Repository archive not found. Install the GitHub App for this repository." : `GitHub archive download failed (${upstream.status}).`, needsGitHubApp: upstream.status === 403 || upstream.status === 404 }, { status: upstream.status === 404 ? 404 : upstream.status === 403 ? 403 : 502 });
     const declaredSize = Number(upstream.headers.get("content-length") ?? 0);
