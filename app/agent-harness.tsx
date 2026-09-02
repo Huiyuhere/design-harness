@@ -37,6 +37,39 @@ const baseDesign = (headline: string, supporting: string) => createRouteDesign(h
 const routeDesign = (headline: string, supporting: string, content: Partial<RouteDesignData["content"]> = {}, centered = false) => { const design = createRouteDesign(headline, supporting); design.content = { ...design.content, ...content }; if (centered) { design.styles.headline.align = "center"; design.styles.supporting.align = "center"; design.styles.eyebrow.align = "center"; } return design; };
 const PROFILE_ICONS = { desktop: Monitor, tablet: Tablet, mobile: Smartphone } as const;
 const frameRouteIdentity = (frame: FrameSpec) => frame.sourceRouteId ?? frame.id;
+const safeRoute = (route: string) => `/${route.trim().replace(/^\/+/, "")}`.replace(/\/+$/, "") || "/new-page";
+function nextRouteSourcePath(sourceFile: string, route: string) {
+  const extension = sourceFile.endsWith(".jsx") ? "jsx" : "tsx";
+  const appMatch = sourceFile.match(/^(.*(?:^|\/)app)\/(?:.*\/)?page\.(?:t|j)sx$/);
+  if (appMatch) return `${appMatch[1]}${safeRoute(route)}/page.${extension}`.replace(/\/+/g, "/");
+  const pagesMatch = sourceFile.match(/^(.*(?:^|\/)pages)\/(?:.*\.)?(?:t|j)sx$/);
+  if (pagesMatch) return `${pagesMatch[1]}${safeRoute(route)}.${extension}`.replace(/\/+/g, "/");
+  return null;
+}
+function linkSourceControl(source: string, label: string, route: string) {
+  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const candidates = [
+    { expression: new RegExp(`<a\\b([^>]*)>${escaped}</a>`, "g"), attribute: "href" },
+    { expression: new RegExp(`<Link\\b([^>]*)>${escaped}</Link>`, "g"), attribute: "href" },
+    { expression: new RegExp(`<NavLink\\b([^>]*)>${escaped}</NavLink>`, "g"), attribute: "to" },
+  ];
+  for (const candidate of candidates) {
+    const matches = [...source.matchAll(candidate.expression)];
+    if (matches.length !== 1) continue;
+    const full = matches[0][0]; const attributes = matches[0][1];
+    const nextAttributes = new RegExp(`\\s${candidate.attribute}=(?:"[^"]*"|'[^']*')`).test(attributes)
+      ? attributes.replace(new RegExp(`(\\s${candidate.attribute}=)(?:"[^"]*"|'[^']*')`), `$1"${route}"`)
+      : `${attributes} ${candidate.attribute}="${route}"`;
+    const output = source.replace(full, full.replace(attributes, nextAttributes));
+    parse(output, { sourceType: "module", plugins: ["jsx", "typescript"] });
+    return output;
+  }
+  throw new Error(`Could not safely map “${label}” to one <a>, <Link>, or <NavLink> source node. The route remains unapplied.`);
+}
+function generatedRouteSource(patch: Extract<AgentDesignJob["patch"], { operation: "create_route" }>) {
+  const name = `Generated${patch.pageName.replace(/[^A-Za-z0-9]/g, "") || "Route"}Page`;
+  return `export default function ${name}() {\n  return (\n    <main>\n      <p>{${JSON.stringify(patch.eyebrow)}}</p>\n      <h1>{${JSON.stringify(patch.headline)}}</h1>\n      <p>{${JSON.stringify(patch.supporting)}}</p>\n      <a href="/">{${JSON.stringify(patch.primaryAction)}}</a>\n    </main>\n  );\n}\n`;
+}
 const withFrameDefaults = (frame: FrameSpec): FrameSpec => ({ ...frame, sourceRouteId: frame.sourceRouteId ?? frame.id, profile: frame.profile ?? "desktop", viewportWidth: frame.viewportWidth ?? RESPONSIVE_PROFILES.desktop.width, viewportHeight: frame.viewportHeight ?? RESPONSIVE_PROFILES.desktop.height, scroll: frame.scroll ?? EMPTY_SCROLL, verification: frame.verification ?? "not_verified" });
 const initialFrames: FrameSpec[] = [
   { id: "home", route: "/", name: "Home", state: "Default", x: 80, y: 80, width: 430, height: 300, accent: "#ff6b47", updatedAt: INITIAL_STAMP },
@@ -94,18 +127,19 @@ function DesignAgentDock({ jobs, activeJobId, composer, composerRef, intent, fra
       {expanded && <>
         {jobs.length > 0 && <div className="agent-job-tabs">{jobs.slice(0, 8).map((job) => <button key={job.id} className={`${job.id === selectedJob?.id ? "active" : ""} status-${job.status}`} onClick={() => onSelectJob(job.id)}><span>{job.frameName}</span><small>{job.status}</small></button>)}</div>}
         {selectedJob ? <div className="agent-result-card">
-          <header><button onClick={() => onFocusFrame(selectedJob.frameId)}><span>{selectedJob.frameName}</span><small>{selectedJob.route} · {selectedJob.nodeLabel}</small></button><div>{selectedJob.status === "thinking" && <><i className="status-pulse" />Thinking</>}{selectedJob.status === "ready" && <><Check size={12} />Ready to review</>}{selectedJob.status === "applied" && <><Check size={12} />Applied</>}{selectedJob.status === "error" && <><AlertTriangle size={12} />Error</>}</div></header>
+          <header><button onClick={() => onFocusFrame(selectedJob.frameId)}><span>{selectedJob.frameName}</span><small>{selectedJob.route} · {selectedJob.nodeLabel}</small></button><div>{selectedJob.status === "thinking" && <><i className="status-pulse" />Thinking</>}{selectedJob.status === "ready" && <><Check size={12} />{selectedJob.patch ? "Ready to apply" : "Response ready"}</>}{selectedJob.status === "applied" && <><Check size={12} />Applied</>}{selectedJob.status === "error" && <><AlertTriangle size={12} />Needs retry</>}</div></header>
           {selectedJob.status === "thinking" && !selectedJob.reply && <div className="agent-progress-copy"><strong>Reading this screen’s context…</strong><span>Brand rules, selected element, source scope, and route history are attached.</span></div>}
           {selectedJob.reply && <RichAgentText text={visibleAgentReply(selectedJob.reply)} />}
           {selectedJob.error && <p className="agent-job-error">{selectedJob.error}</p>}
-          {selectedJob.patch && <div className="agent-patch-review"><header><span>Proposed text edit</span><small>Approval required</small></header><div><del>{selectedJob.before}</del><ArrowRight size={13} /><ins>{selectedJob.patch.after}</ins></div><p>{selectedJob.patch.rationale}</p></div>}
-          <footer><div>{selectedJob.durationMs != null && <span>{timeLabel(selectedJob.finishedAt ?? selectedJob.createdAt)} · {(selectedJob.durationMs / 1000).toFixed(1)}s</span>}<button onClick={() => navigator.clipboard.writeText(visibleAgentReply(selectedJob.reply))} disabled={!selectedJob.reply}><Copy size={12} />Copy response</button></div>{selectedJob.status === "thinking" ? <button className="danger-action" onClick={() => onStop(selectedJob.id)}><CircleStop size={13} />Stop</button> : selectedJob.patch && selectedJob.status === "ready" ? <button className="apply-agent-patch" onClick={() => onApply(selectedJob.id)}><Check size={13} />Apply to {selectedJob.frameName}</button> : null}</footer>
+          {selectedJob.patch?.operation === "replace_text" && <div className="agent-patch-review"><header><span>Proposed text edit</span><small>Approval required</small></header><div><del>{selectedJob.before}</del><ArrowRight size={13} /><ins>{selectedJob.patch.after}</ins></div><p>{selectedJob.patch.rationale}</p></div>}
+          {selectedJob.patch?.operation === "create_route" && <div className="agent-patch-review route-patch-review"><header><span>Page + route patch</span><small>Approval required</small></header><div className="route-patch-flow"><b>{selectedJob.nodeLabel}</b><ArrowRight size={13} /><ins>{selectedJob.patch.route}</ins></div><h4>{selectedJob.patch.headline}</h4><p>{selectedJob.patch.supporting}</p><small>Creates {selectedJob.patch.pageName}, connects the selected control, and inherits the current route hierarchy.</small></div>}
+          <footer><div>{selectedJob.durationMs != null && <span>{timeLabel(selectedJob.finishedAt ?? selectedJob.createdAt)} · {(selectedJob.durationMs / 1000).toFixed(1)}s</span>}<button onClick={() => navigator.clipboard.writeText(visibleAgentReply(selectedJob.reply))} disabled={!selectedJob.reply}><Copy size={12} />Copy response</button></div>{selectedJob.status === "thinking" ? <button className="danger-action" onClick={() => onStop(selectedJob.id)}><CircleStop size={13} />Stop</button> : selectedJob.patch && selectedJob.status === "ready" ? <button className="apply-agent-patch" onClick={() => onApply(selectedJob.id)}><Check size={13} />{selectedJob.patch.operation === "create_route" ? `Build ${selectedJob.patch.route}` : `Apply to ${selectedJob.frameName}`}</button> : null}</footer>
         </div> : <div className="agent-first-use"><strong>Make a precise design change</strong><div><span>1</span><p><b>Select</b> a screen and element on the canvas or in Layers.</p></div><div><span>2</span><p><b>Describe</b> the copy or design outcome you want.</p></div><div><span>3</span><p><b>Review and apply</b> the proposed patch; the matching frame refreshes.</p></div></div>}
         <div className="agent-target-bar"><span>Target</span><button>{frameName} · {route}</button><i>›</i><button>{nodeLabel}</button>{sourceFile && <><i>›</i><code>{sourceFile}</code></>}</div>
         <div className="agent-intent-toggle"><button className={intent === "edit" ? "active" : ""} onClick={() => onIntent("edit")}><Code2 size={12} />Propose an edit</button><button className={intent === "discuss" ? "active" : ""} onClick={() => onIntent("discuss")}><Bot size={12} />Discuss only</button><span>Edits never apply automatically</span></div>
         {attachedGap && <div className="agent-gap-context"><AlertTriangle size={12} /><span>Flow gap: {attachedGap.label}</span><button onClick={onClearGap}>×</button></div>}
         <div className="agent-composer-row"><textarea ref={composerRef} value={composer} onChange={(event) => onComposer(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSend(); } }} placeholder={intent === "edit" ? `Example: Rewrite “${nodeLabel}” to sound clearer and more confident` : "Ask for critique, alternatives, or a flow recommendation"} /><button className="send-button" onClick={onSend} disabled={!composer.trim()}><ArrowUp size={17} /></button></div>
-        <footer className="agent-command-footer"><span><Sparkles size={11} />gpt-5.4 mini · {keyLabel}</span><span>Five remote prompts · one write per source scope</span></footer>
+        <footer className="agent-command-footer"><span><Sparkles size={11} />gpt-5.4 mini · {keyLabel}</span><span>Agent proposes executable changes · approval gates every write</span></footer>
       </>}
     </div>
   </section>;
@@ -435,15 +469,15 @@ export function AgentHarness() {
     const permission = mayStartAgentJob(agentJobsRef.current, scopeKey);
     if (!permission.allowed) { if (permission.conflictId) setActiveAgentJobId(permission.conflictId); setToast(permission.reason); window.setTimeout(() => setToast(null), 2800); return; }
     const prompt = composer.trim(); const jobId = crypto.randomUUID(); const startedAt = performance.now(); const controller = new AbortController(); const gapId = attachedGap?.id ?? null;
-    const job: AgentDesignJob = { id: jobId, workspaceId: workspace.id, frameId: selectedSpec.id, sourceRouteId, scopeKey, frameName: selectedSpec.name, route: selectedSpec.route, node: selectedNode, nodeLabel: selectedMeta.label, sourceFile: selectedSpec.sourceFile, before: selectedContent, prompt, intent: agentIntent, status: "thinking", reply: "", createdAt: now() };
+    const job: AgentDesignJob = { id: jobId, workspaceId: workspace.id, frameId: selectedSpec.id, sourceRouteId, scopeKey, frameName: selectedSpec.name, route: selectedSpec.route, node: selectedNode, nodeLabel: selectedMeta.label, sourceFile: selectedSpec.sourceFile, gapId: gapId ?? undefined, before: selectedContent, prompt, intent: agentIntent, status: "thinking", reply: "", createdAt: now() };
     agentControllers.current.set(jobId, controller); mutateAgentJobs((items) => [job, ...items].slice(0, 30)); setActiveAgentJobId(jobId); setComposer(""); setAttachedGap(null);
     try {
       const response = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: projectPayload, threadId: `design-${workspace.id}-${sourceRouteId}`, prompt, intent: agentIntent, model: "gpt-5.4-mini", attachedGapId: gapId, contextReceipt: { frames: [selectedSpec.id], files: [selectedSpec.sourceFile ?? (selectedSpec.route === "/" ? "app/page.tsx" : `app${selectedSpec.route}/page.tsx`), ...(workspace.brand.documents ?? []).map((document) => document.path)], computedStyles: [`font-size:${cssSize(selectedStyle)}`, `color:${selectedStyle.color}`, `font-family:${selectedStyle.font}`], memoryIds: workspace.brand.sourceFiles, decisionIds: ["route-state-isolated", "source-is-truth", ...activeGaps.map((gap) => `flow-gap:${gap.frameId}:${gap.node}`)], target: { frameId: selectedSpec.id, sourceRouteId, scopeKey, route: selectedSpec.route, node: selectedNode, label: selectedMeta.label, currentText: selectedContent, sourceFile: selectedSpec.sourceFile } } }) });
       if (!response.ok || !response.body) { const payload = await response.json().catch(() => ({ error: "Agent request failed." })) as { error?: string }; if (response.status === 401) { setKeyStatus({ loading: false, connected: false, models: [] }); setKeyModal(true); } throw new Error(payload.error ?? "Agent request failed."); }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; let output = ""; let receipt: AgentReceipt | undefined;
       while (true) { const { done, value } = await reader.read(); if (done) break; buffer += decoder.decode(value, { stream: true }); const lines = buffer.split("\n"); buffer = lines.pop() ?? ""; for (const line of lines) { if (!line.startsWith("data: ") || line === "data: [DONE]") continue; const event = JSON.parse(line.slice(6)); if (event.type === "agent.context_receipt") receipt = event.receipt; if (event.type === "response.output_text.delta") { output += event.delta; mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, reply: output, receipt } : item)); } } }
-      const finishedAt = now(); const patch = parseAgentPatch(output);
-      mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, reply: output || "The agent completed without a text response.", receipt, patch, status: "ready", finishedAt, durationMs: performance.now() - startedAt } : item));
+      const finishedAt = now(); const patch = parseAgentPatch(output); const missingExecutablePatch = job.intent === "edit" && !patch;
+      mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, reply: output || "The agent completed without a text response.", receipt, patch, status: missingExecutablePatch ? "error" : "ready", error: missingExecutablePatch ? "The agent returned advice but no executable change. Retry this request; nothing was applied." : undefined, finishedAt, durationMs: performance.now() - startedAt } : item));
     } catch (error) {
       const cancelled = (error as Error).name === "AbortError"; const finishedAt = now();
       mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: cancelled ? "cancelled" : "error", error: cancelled ? "Stopped. No source changes were applied." : (error as Error).message, finishedAt, durationMs: performance.now() - startedAt } : item));
@@ -456,6 +490,49 @@ export function AgentHarness() {
     if (conflictingApply) { setToast(`Another patch is writing ${job.scopeKey}. This edit remains ready.`); window.setTimeout(() => setToast(null), 2600); return; }
     mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "applying" } : item));
     try {
+      if (job.patch.operation === "create_route") {
+        const route = safeRoute(job.patch.route); const stamp = now();
+        const sourceVariants = workspace.frames.filter((frame) => frameRouteIdentity(frame) === job.sourceRouteId);
+        const existingTargets = workspace.frames.filter((frame) => frame.route === route);
+        if (job.sourceFile && activeLiveUrl) {
+          const { readLiveSource, writeLiveSource } = await import("../lib/live-preview-client");
+          const source = await readLiveSource(job.sourceFile); const linkedSource = linkSourceControl(source, job.before, route);
+          if (!existingTargets.length) {
+            const targetPath = nextRouteSourcePath(job.sourceFile, route);
+            if (!targetPath) throw new Error("This router needs a multi-file adapter before Design Harness can safely create the page. No source was changed.");
+            const pageSource = generatedRouteSource(job.patch); parse(pageSource, { sourceType: "module", plugins: ["jsx", "typescript"] });
+            await writeLiveSource(targetPath, pageSource);
+          }
+          await writeLiveSource(job.sourceFile, linkedSource);
+        }
+        const newSourceRouteId = `${crypto.randomUUID()}-route`;
+        const createdFrames: FrameSpec[] = existingTargets.length ? [] : sourceVariants.map((source, index) => ({
+          id: `${newSourceRouteId}--${source.profile ?? "desktop"}`, sourceRouteId: newSourceRouteId, profile: source.profile ?? "desktop", viewportWidth: source.viewportWidth, viewportHeight: source.viewportHeight, scroll: EMPTY_SCROLL, verification: "not_verified", route, name: `${job.patch.pageName}${sourceVariants.length > 1 ? ` · ${RESPONSIVE_PROFILES[source.profile ?? "desktop"].label}` : ""}`, state: "Agent draft", x: 80 + index * 490, y: 80 + Math.ceil(workspace.frames.length / Math.max(1, sourceVariants.length)) * 375, width: source.width, height: source.height, accent: source.accent, updatedAt: stamp, sourceFile: job.sourceFile ? nextRouteSourcePath(job.sourceFile, route) ?? undefined : undefined,
+        }));
+        const template = cloneRouteDesign(normalizeRouteDesign(workspace.designs[job.frameId], job.frameName, "Route-specific design state."));
+        template.content = { ...template.content, eyebrow: job.patch.eyebrow, headline: job.patch.headline, supporting: job.patch.supporting, primaryAction: job.patch.primaryAction };
+        setWorkspaces((items) => items.map((item) => {
+          if (item.id !== workspace.id) return item;
+          const connections = { ...item.connections };
+          for (const [index, source] of sourceVariants.entries()) {
+            const target = existingTargets.find((frame) => (frame.profile ?? "desktop") === (source.profile ?? "desktop")) ?? createdFrames[index] ?? existingTargets[0];
+            if (!target) continue;
+            connections[source.id] = { ...(connections[source.id] ?? {}), [job.node]: target.id };
+            if (createdFrames.includes(target)) connections[target.id] = { ...(connections[target.id] ?? {}), primaryAction: source.id };
+          }
+          const designs = { ...item.designs, ...Object.fromEntries(createdFrames.map((frame) => [frame.id, cloneRouteDesign(template)])) };
+          const gaps = job.gapId ? resolveFlowGap(item.gaps, job.gapId) : item.gaps.map((gap) => gap.frameId === job.frameId && gap.node === job.node ? { ...gap, status: "resolved" as const, transactionId: `route:${newSourceRouteId}` } : gap);
+          return { ...item, updatedAt: stamp, frames: [...item.frames, ...createdFrames], designs, connections, gaps };
+        }));
+        const target = existingTargets.find((frame) => (frame.profile ?? "desktop") === (selectedSpec.profile ?? "desktop")) ?? createdFrames.find((frame) => (frame.profile ?? "desktop") === (selectedSpec.profile ?? "desktop")) ?? createdFrames[0];
+        const gap = workspace.gaps.find((item) => item.id === job.gapId);
+        if (gap) persistGap({ ...gap, status: "resolved", transactionId: `route:${target?.id ?? newSourceRouteId}` });
+        commit("route.create-and-connect", "missing destination", route, workspace.frames.find((frame) => frame.id === job.frameId));
+        mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "applied" } : item));
+        if (target) { setSelectedFrame(target.id); setSelected(`${target.id}:headline`); setPan({ x: 80 - target.x * zoom, y: 60 - target.y * zoom }); }
+        setToast(`${job.patch.pageName} built at ${route} and connected to ${job.nodeLabel}`); window.setTimeout(() => setToast(null), 3000);
+        return;
+      }
       if (job.sourceFile && activeLiveUrl) {
         const { readLiveSource, writeLiveSource } = await import("../lib/live-preview-client"); const source = await readLiveSource(job.sourceFile); const anchor = `>${job.before}<`;
         if (source.split(anchor).length !== 2) throw new Error("The selected text is no longer unique in the source. Open Code to reconcile it safely.");
@@ -483,7 +560,7 @@ export function AgentHarness() {
       <div className={`github-app-card ${githubStatus.connected ? "connected" : "missing"}`}><GitBranch size={14} /><div><strong>{githubStatus.connected ? "GitHub App connected" : githubStatus.configured ? "Connect GitHub App" : "GitHub publishing unavailable"}</strong><span>{githubStatus.connected ? "Read-only imports · PR write only after approval" : githubStatus.configured ? "Selected repositories · short-lived tokens" : "App credentials have not been configured"}</span></div>{githubStatus.configured && !githubStatus.connected && <a href="/api/github/install">Connect</a>}</div>
       <div className="sidebar-search"><Search size={14} /><input placeholder="Search this workspace" /></div>
       <div className="side-section"><div className="section-title"><span>ROUTES · RESPONSIVE</span><button onClick={() => openPageModal("duplicate")} title="Add or duplicate a page"><Plus size={13} /></button></div>{workspace.frames.map((frame) => { const DeviceIcon = PROFILE_ICONS[frame.profile ?? "desktop"]; return <button key={frame.id} className={`route-item ${selectedFrame === frame.id ? "active" : ""}`} onClick={() => centerFrame(frame.id)}><DeviceIcon size={14} /><span><strong>{frame.name}</strong><small>{frame.route} · {frame.viewportWidth ?? 1440}px</small></span><i className={liveFrameIds.includes(frame.id) && activeLiveUrl ? "live-dot" : "thumbnail-dot"} /></button>; })}</div>
-      <div className="side-section flow-gap-section"><div className="section-title"><span>FLOW GAPS · {activeGaps.length}</span><button onClick={() => setFlowFilter(!flowFilter)}><Eye size={13} /></button></div>{activeGaps.length ? activeGaps.slice(0, flowFilter ? 20 : 3).map((gap) => <button className="flow-gap-item" key={gap.id} onClick={() => openGapInChat(gap)}><span>!</span><div><strong>{gap.label}</strong><small>No next state · click to plan in chat</small></div><Sparkles size={12} /></button>) : <div className="no-flow-gaps"><Check size={12} /> No missing destinations logged</div>}</div>
+      <div className="side-section flow-gap-section"><div className="section-title"><span>FLOW GAPS · {activeGaps.length}</span><button onClick={() => setFlowFilter(!flowFilter)}><Eye size={13} /></button></div>{activeGaps.length ? activeGaps.slice(0, flowFilter ? 20 : 3).map((gap) => <button className="flow-gap-item" key={gap.id} onClick={() => openGapInChat(gap)}><span>!</span><div><strong>{gap.label}</strong><small>No next state · ask agent to build it</small></div><Sparkles size={12} /></button>) : <div className="no-flow-gaps"><Check size={12} /> No missing destinations logged</div>}</div>
       <div className="side-section"><div className="section-title"><span>SAVED STATES</span><button><Plus size={13} /></button></div><button className="state-item"><span className="state-glyph">◇</span><span>Success state</span><small>{dateLabel(workspace.updatedAt)}</small></button><button className="state-item"><span className="state-glyph">◇</span><span>Responsive state</span><small>{timeLabel(workspace.updatedAt)}</small></button></div>
       <button className="memory-card" onClick={() => setBrandModal(true)}><Palette size={15} /><div><strong>Brand & design intelligence</strong><span>{workspace.brand.colors.length} colors · {workspace.brand.fonts.length} fonts · {(workspace.brand.documents ?? []).length} docs</span></div><ChevronRight size={14} /></button>
       {workspace.repositoryUrl && <button className={`runtime-card ${livePreview.workspaceId === workspace.id ? livePreview.status : "idle"}`} onClick={() => void startRepositoryPreview()} disabled={["downloading", "mounting", "installing", "starting"].includes(livePreview.status) && livePreview.workspaceId === workspace.id}>{activeLiveUrl ? <RefreshCw size={15} /> : <Play size={15} />}<div><strong>{activeLiveUrl ? "Restart live repository" : "Run live repository"}</strong><span>{livePreview.workspaceId === workspace.id ? livePreview.message : "One WebContainer · explicit trust required"}</span></div></button>}

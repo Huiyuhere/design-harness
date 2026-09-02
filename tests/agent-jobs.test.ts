@@ -21,3 +21,11 @@ test("extracts a bounded text patch without showing its control payload", () => 
   assert.deepEqual(parseAgentPatch(output), { operation: "replace_text", after: "A clearer headline", rationale: "More specific" });
   assert.equal(visibleAgentReply(output), "Short rationale.");
 });
+
+test("extracts an executable page-and-route patch for a flow gap", () => {
+  const output = 'I will create the minimum destination.\n<design_patch>{"operation":"create_route","route":"company","pageName":"Company","eyebrow":"ABOUT US","headline":"Meet the company","supporting":"A concise company introduction.","primaryAction":"Return home","rationale":"Resolves the missing destination"}</design_patch>';
+  assert.deepEqual(parseAgentPatch(output), {
+    operation: "create_route", route: "/company", pageName: "Company", eyebrow: "ABOUT US", headline: "Meet the company", supporting: "A concise company introduction.", primaryAction: "Return home", rationale: "Resolves the missing destination",
+  });
+  assert.equal(visibleAgentReply(output), "I will create the minimum destination.");
+});

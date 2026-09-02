@@ -16,5 +16,5 @@ export function resolveFlowGap(gaps: FlowGap[], gapId: string) {
 }
 
 export function flowGapPrompt(gap: FlowGap, frameName: string, projectName: string) {
-  return `Plan the missing “${gap.label}” experience for ${projectName}. It is a ${gap.role ?? "control"} on the ${frameName} frame with no designed destination.\n\nPropose what should happen after the click, the minimum new route or state at ${gap.suggestedRoute}, the content hierarchy, reusable components, and how it should inherit the current brand and visual system. Call out assumptions before suggesting source changes.`;
+  return `Build the missing “${gap.label}” experience for ${projectName}. It is a ${gap.role ?? "control"} on the ${frameName} frame with no destination. Create the minimum useful route or state at ${gap.suggestedRoute}, connect this control to it, and inherit the current brand, page hierarchy, typography, colors, spacing, and reusable components. Make conservative assumptions and produce an executable page-and-route patch for my approval instead of stopping at a plan.`;
 }

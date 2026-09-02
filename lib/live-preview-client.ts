@@ -120,7 +120,10 @@ export async function readLiveSource(path: string) {
 export async function writeLiveSource(path: string, content: string) {
   const instance = await container();
   if (!activeWorkspace) throw new Error("Start the live repository preview first.");
-  await instance.fs.writeFile(`/workspaces/${activeWorkspace}/${path}`, content);
+  const fullPath = `/workspaces/${activeWorkspace}/${path}`;
+  const parent = fullPath.split("/").slice(0, -1).join("/");
+  await instance.fs.mkdir(parent, { recursive: true });
+  await instance.fs.writeFile(fullPath, content);
 }
 
 export async function stopLiveRepositoryPreview() {
