@@ -3,13 +3,15 @@ import test from 'node:test';
 import type { FileSystemTree } from '@webcontainer/api';
 import { PreviewSession, previewCommands, type PreviewRuntime, type PreviewProcess, type PreviewStart, type LivePreviewEvent } from '../lib/preview-session';
 import { validateDraft, type PreviewDraft } from '../lib/preview-drafts';
+import { NEXT_ASYNC_CONTEXT_PROBE } from '../lib/preview-compatibility';
+import { execFileSync } from 'node:child_process';
 
 const deferred = <T>() => { let resolve!: (value: T) => void; let reject!: (error: Error) => void; const promise = new Promise<T>((yes, no) => { resolve = yes; reject = no; }); return { promise, resolve, reject }; };
 const tree: FileSystemTree = { 'package.json': { file: { contents: '{"scripts":{"dev":"vite"}}' } }, 'page.tsx': { file: { contents: 'original' } } };
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 async function until(check: () => boolean) { for (let i = 0; i < 100; i++) { if (check()) return; await tick(); } assert.fail('Expected state did not arrive'); }
 
-function fixture(options: { install?: Promise<number>; noReady?: boolean; failSpawn?: boolean; failWrite?: string; mountGate?: Promise<void>; failSave?: boolean; download?: (input: PreviewStart, signal: AbortSignal) => Promise<FileSystemTree>; serverLimit?: number; installLimit?: number } = {}) {
+function fixture(options: { contextExit?: number; install?: Promise<number>; noReady?: boolean; failSpawn?: boolean; failWrite?: string; mountGate?: Promise<void>; failSave?: boolean; download?: (input: PreviewStart, signal: AbortSignal) => Promise<FileSystemTree>; serverLimit?: number; installLimit?: number } = {}) {
   const files = new Map<string, string>(); const drafts = new Map<string, PreviewDraft>(); const mounts: string[] = []; const processes: Array<PreviewProcess & { command: string; args: string[]; killed: boolean; end(code: number): void }> = [];
   const listeners = new Set<(port: number, url: string) => void>(); const events: LivePreviewEvent[] = []; const rawWrites = new Map<string, string | Uint8Array>();
   let failWrite = options.failWrite; let saves = 0;
@@ -22,7 +24,8 @@ function fixture(options: { install?: Promise<number>; noReady?: boolean; failSp
       const exit = deferred<number>();
       const p = { command, args, killed: false, exit: exit.promise, output: new ReadableStream<string>({ start(controller) { controller.close(); } }), kill() { p.killed = true; exit.resolve(143); }, end: exit.resolve };
       processes.push(p);
-      if (args[0] !== 'run') { if (options.install) void options.install.then(exit.resolve); else exit.resolve(0); }
+      if (command === 'node') exit.resolve(options.contextExit ?? 0);
+      else if (args[0] !== 'run') { if (options.install) void options.install.then(exit.resolve); else exit.resolve(0); }
       else if (!options.noReady) queueMicrotask(() => { for (const listener of listeners) listener(3000, 'https://preview.example'); });
       return p;
     },
@@ -45,6 +48,24 @@ test('trust and safe workspace/revision required before any download', async () 
   const f = fixture(); await assert.rejects(f.session.start({ ...f.input(), trusted: false }), /trust/);
   await assert.rejects(f.session.start({ ...f.input(), workspaceId: '../other' }), /safe workspace/);
   await assert.rejects(f.session.start({ ...f.input(), ref: 'main' }), /exact Git SHA/); assert.equal(f.mounts.length, 0);
+});
+test('Next App Router checks request context before transferring source or installing dependencies', async () => {
+  const files: FileSystemTree = { 'package.json': { file: { contents: '{"scripts":{"dev":"next dev"},"dependencies":{"next":"16.2.10"}}' } }, app:{directory:{'page.jsx':{file:{contents:'export default()=> <h1>Page</h1>'}}}} };
+  assert.equal(previewCommands(files).requiresAsyncContext, true);
+  assert.equal(previewCommands({...files,app:{file:{contents:''}}}).requiresAsyncContext, false);
+  assert.equal(previewCommands({'package.json':files['package.json'],src:{directory:{app:files.app}}}).requiresAsyncContext, true);
+  const blocked = fixture({contextExit:78,download:async()=>files});
+  await assert.rejects(blocked.session.start(blocked.input()), /Preview is unavailable/);
+  assert.equal(blocked.processes.length,1);assert.equal(blocked.processes[0].command,'node');
+  assert.equal(blocked.rawWrites.size,0);assert.equal(blocked.files.size,0);
+  assert.equal(blocked.events.at(-1)?.status,'error');
+  const compatible = fixture({download:async()=>files});
+  await compatible.session.start(compatible.input());
+  assert.equal(compatible.events.at(-1)?.status,'ready');
+  await compatible.session.stop();
+});
+test('request-context compatibility probe passes with genuine native Node semantics', () => {
+  assert.match(execFileSync(process.execPath,['-e',NEXT_ASYNC_CONTEXT_PROBE],{encoding:'utf8'}),/Request context supported/);
 });
 test('classic Yarn uses frozen-lockfile; modern Yarn immutable; no-lock npm honest', () => {
   assert.equal(previewCommands(tree).locked, false);

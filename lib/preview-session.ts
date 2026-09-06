@@ -1,6 +1,7 @@
 import type { FileSystemTree } from '@webcontainer/api';
 import { safeRepositoryPath } from './archive-policy';
 import { validateDraft, type PreviewDraft, type PreviewDraftStore, type SourceChange } from './preview-drafts';
+import { NEXT_ASYNC_CONTEXT_PROBE, NEXT_CONTEXT_ERROR } from './preview-compatibility';
 
 export type LivePreviewStatus = 'idle' | 'downloading' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
 export type LivePreviewEvent = { status: LivePreviewStatus; message: string; url?: string };
@@ -52,9 +53,12 @@ export function previewCommands(files: FileSystemTree) {
   // Next 16 defaults to a native-only bundler. For the uncustomized dev command,
   // use its documented Webpack option in the WASM runtime, without editing source.
   const nextVersion = String(pkg.dependencies?.next ?? pkg.devDependencies?.next ?? '');
-  const webpack = pkg.scripts.dev.trim() === 'next dev' && Number(nextVersion.match(/^[~^]?(\d+)/)?.[1]) >= 16;
+  const nextMajor = Number(nextVersion.match(/^[~^]?(\d+)/)?.[1]);
+  const webpack = pkg.scripts.dev.trim() === 'next dev' && nextMajor >= 16;
+  const src = files.src;
+  const requiresAsyncContext = nextMajor >= 16 && Boolean(files.app && 'directory' in files.app || src && 'directory' in src && src.directory.app && 'directory' in src.directory.app);
   const startArgs = ['run', 'dev', ...(webpack ? (manager === 'npm' ? ['--', '--webpack'] : ['--webpack']) : [])];
-  return { manager, locked, args, webpack, startArgs };
+  return { manager, locked, args, webpack, startArgs, requiresAsyncContext };
 }
 
 /** One serialized lifecycle. Late completions can never mount/write the next repository. */
@@ -108,6 +112,14 @@ export class PreviewSession {
         session.mounted = true;
         await session.instance.mount({ workspaces: { directory: { [input.workspaceId]: { directory: {} } } } });
         this.assert(session);
+        if (commands.requiresAsyncContext) {
+          this.emit(session, { status: 'mounting', message: 'Checking Next.js runtime compatibility…' });
+          try { await this.command(session, 'node', ['-e', NEXT_ASYNC_CONTEXT_PROBE], 10_000); }
+          catch (error) {
+            if (error instanceof Error && error.message.startsWith('node failed (78)')) throw new Error(NEXT_CONTEXT_ERROR, { cause: error });
+            throw error;
+          }
+        }
         const upload = async (nodes: FileSystemTree, parent: string) => {
           for (const [name, node] of Object.entries(nodes)) {
             this.assert(session); const path = `${parent}/${name}`;

@@ -140,6 +140,15 @@ describes a similar storage invariant with Next.js 15.5; it does not establish
 the cause or a fix for the audited 16.2 case. No framework downgrade or replacement
 is performed automatically.
 
+Next 16 App Router imports now run a tiny request-context capability check before
+source transfer and dependency installation. If the runtime loses the context
+after `await`, the preview stops with an explicit incompatibility message. This
+does **not** fix or replace Next.js: it prevents a known-failing startup from
+spending minutes and allocating dependencies. The test is behavioral, so a fixed
+runtime can pass it without a hard-coded release allowlist. Both API 1.6.1 and
+the separately tested 1.6.4 failed this probe and a minimal Next 16.2.10 app on
+the audited runtime; the project dependency remains unchanged at 1.6.1.
+
 The importer transfers raw file buffers using `fs.writeFile`, bypassing the
 API 1.6.1 tree serializer's Windows-1252 byte conversion. Exact UTF-8 source
 transfer was verified through the real runtime; binary roundtrip regression
