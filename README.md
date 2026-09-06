@@ -1,13 +1,33 @@
 # Design Harness
 
-Design Harness is a code-native design canvas for React applications. It imports
-an application at an immutable Git SHA, renders its routes as frames, maps DOM
-layers back to JSX/CSS, and records validated edits as reversible source
-transactions. The source tree—not a canvas override—is the design truth.
+Design Harness is an in-development code-native canvas for React applications.
+The intended source of truth is the imported repository, not a visual override.
+The complete import → DOM selection → validated source patch → production
+verification journey is **not yet proven end to end**. Do not use the demo
+inspector or a successful runtime start as evidence of source synchronization.
 
-## Current foundation
+## Current implementation and evidence
 
-The first working slice includes:
+| Area | Current state |
+| --- | --- |
+| Setup and shell | Compact GitHub/AI onboarding and accessible toolbar hints; browser-tested at desktop, tablet and mobile widths |
+| GitHub import | Private App flow, read-scoped installation tokens and immutable-SHA archive/metadata inspection; unit-tested, live selected-repository acceptance still outstanding |
+| Live pages | Actual application iframes, not headless captures; one selected frame by default, explicit pins up to three |
+| Focus and zoom | Focus replaces other live instances; no fourth iframe. Below 65% zoom, no canvas iframe. Browser fixture covers a 90-frame schedule |
+| Scroll | Window and stable named nested-container offsets saved through a sender-window/origin-checked bridge. Scroll saves do not change the iframe URL. Tested with actual cross-origin browser iframes |
+| Inactive cards | Explicit placeholders until actual thumbnails exist. Imported cards no longer display fabricated page layouts |
+| DOM and visual edits | Real imported DOM-to-JSX/CSS anchoring is not integrated. Legacy Design/Layers values describe the demo projection, not trustworthy imported source |
+| Source editor | Can read/write a route file in the running tree, with syntax checks. Atomic multi-file rollback, complete hash conflict protection, HMR/style proof and durable reconstruction remain incomplete |
+| Patch adapters | JSX, CSS and Tailwind transformation primitives have unit tests; these are not proof of the whole inspector/agent path |
+| Agent | Personal-key streaming and approved proposals exist; selected-element execution, durable jobs and cross-workspace application need end-to-end validation |
+| Concurrency | Scheduling primitives are unit-tested. Comprehensive repository-wide write serialization is not yet integrated across every mutation path |
+| Persistence | Local workspace state and some D1 context records exist. Schema/R2 bindings alone do not prove encrypted patch persistence |
+| Production | No production pixel-verification claim. Exact-SHA baseline ingestion, managed push/PR and production publishing remain incomplete |
+
+### Legacy/demo functionality
+
+The following UI and primitives exist, but imported-application integration
+must be assessed against the table above:
 
 - a resizable, collapsible project and route sidebar;
 - isolated workspaces whose route frames, edits, brand tokens, and update times
@@ -26,7 +46,7 @@ The first working slice includes:
 - prototype flow-gap detection: unresolved controls are logged with click
   counts and timestamps, open as editable context-rich agent drafts, then can
   generate and link a suggested next state;
-- direct public GitHub repository inspection with Next.js and React
+- GitHub App-authenticated repository inspection with Next.js and React
   Router/Wouter route discovery plus brand token extraction;
 - semantic source-change records with timestamps and inverse values;
 - a persistent agent surface with frame context, project-scoped D1 history,
@@ -43,15 +63,14 @@ The first working slice includes:
   memory, and artifact metadata;
 - R2 binding declarations for encrypted patch bundles and frame artifacts;
 - WebContainer isolation checks and a single-instance runtime boundary;
-- a bounded public-repository archive runtime that mounts one source tree,
+- a bounded GitHub App-authenticated archive runtime that mounts one source tree,
   installs only after an explicit trust prompt, and runs one dev server;
 - linked desktop (1440×900), tablet (768×1024), and mobile (390×844)
   variants that share route source while retaining independent viewport state;
-- an adaptive live-frame scheduler: zero iframes below 65% zoom, normally two
-  and never more than three; inactive frames are explicitly labeled static;
-- Vite window-scroll snapshots restored through a preview-only, origin-checked
-  bridge; arbitrary React state and Next.js demotion restoration still require
-  deterministic named fixtures;
+- a live-frame scheduler: zero canvas iframes below 65% zoom, normally one
+  and up to three with explicit pins; focus uses one instance;
+- window and stable named nested-scroll snapshots restored through a
+  preview-only bridge; arbitrary React state still requires named fixtures;
 - a direct mapped-source editor for copywriting and JSX/TSX changes, with
   syntax validation before the file is written to the running source tree;
 - an optional, manually installed GitHub Actions workflow for Playwright
@@ -59,10 +78,11 @@ The first working slice includes:
 - a bounded OpenAI Responses API proxy that streams responses and only permits
   inspect/propose tools. The agent cannot apply or publish a patch.
 
-Private GitHub App installation, DOM-to-source instrumentation, generated WebP
+End-to-end private GitHub import, DOM-to-source instrumentation, generated WebP
 thumbnails, screenshot-baseline pixel diffing, HMR geometry/computed-style
 proof, encrypted R2 bundle persistence, and explicit push/PR remain integration
-milestones. Public repository archives can run after trust is confirmed. Direct
+milestones. Archive imports require a GitHub App connection; dependency execution
+requires separate explicit trust. Direct
 source edits affect the in-browser runtime only until a future draft commit and
 explicit push flow is connected. The product never awards a pixel-verified
 badge from the canvas or from static representations.
@@ -76,8 +96,8 @@ badge from the canvas or from static representations.
 - A GitHub App must be limited to selected repositories with Metadata read,
   Contents read/write, Pull Requests read/write, and no Workflows permission.
 - Agent changes are proposals until the user approves a diff.
-- Writers are serialized per repository. Up to three read-only jobs may run in
-  parallel.
+- The intended policy is repository-serialized writes and bounded analysis.
+  The scheduler library is not yet connected to every mutation path.
 - Published source must never contain preview instrumentation attributes.
 - Branch push and pull-request creation are separate explicit actions.
 
@@ -97,18 +117,24 @@ Validation:
 
 ```bash
 pnpm test
+pnpm run test:preview
 pnpm build
 node --test tests/rendered-html.test.mjs
 ```
 
+`test:preview` requires local desktop Chrome at the standard macOS application
+path. It launches a separate headless test browser, exercises real iframe and
+bridge behavior using synthetic pages, blocks non-fixture requests, and writes
+ignored results under `outputs/audit`. It does not log into GitHub or certify
+private-import, WebContainer compatibility, production pixels or renderer RAM.
+
 ## Preview and production-verification states
 
-- **Live source synchronized** means a real route is running in a WebContainer
-  iframe from the current in-browser source tree. It is interactive and
-  scrollable, but is not production proof.
-- **Thumbnail may be stale** means the card is static and cannot scroll. The
-  current release uses a labeled static representation while generated WebP
-  capture is completed.
+- **Live page · not verified** means a real iframe is running. Starting a
+  server or writing a file does not establish source/HMR/geometry parity.
+  “Live source synchronized” is not awarded by this path.
+- **Preview paused / not started** means there is no live iframe for that card.
+  There is no actual thumbnail capture yet; a placeholder is not a screenshot.
 - **Production pixel verified** is reserved for a pushed, exact Git SHA that
   passes the repository-installed Playwright workflow and approved pixel-diff
   thresholds. The included workflow currently captures screenshots and runs
@@ -157,7 +183,7 @@ pass these checks before imported code execution is enabled:
 6. A private selected-repository archive can be reconstructed from a base SHA
    and ordered patch bundles.
 
-## Supported first-release targets
+## Intended first-release targets (not a compatibility certification)
 
 - Vite React
 - Next.js App Router and Pages Router

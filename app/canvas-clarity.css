@@ -61,3 +61,12 @@
   .setup-tiles a,.setup-tiles button { font-size: 14px; }
 }
 @media(max-width: 380px) { .setup-tiles { grid-template-columns: 1fr; } }
+
+.uncaptured-preview { height: calc(100% - 24px); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; background: #f7f8fa; color: #636b76; font-size: 14px; }
+.uncaptured-preview strong { color: #29313b; font-size: 18px; }
+.uncaptured-preview button { border: 1px solid #d3d9e0; background: white; border-radius: 8px; padding: 8px 14px; color: #253d89; font-size: 14px; cursor: pointer; }
+.uncaptured-preview small { font-size: 12px; }
+.live-iframe-viewport, .focus-iframe-shell { position: relative; }
+.frame-runtime-feedback { position: absolute; z-index: 3; top: 8px; left: 8px; right: 8px; width: fit-content; max-width: calc(100% - 16px); border: 1px solid #d9dee7; border-radius: 8px; padding: 8px 12px; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; background: #fffffff5; color: #454d58; pointer-events: none; }
+.frame-runtime-feedback.error { background: #fff3f0; color: #a02c21; }
+.workspace-status[data-running=false] span i { background: #989da5; }

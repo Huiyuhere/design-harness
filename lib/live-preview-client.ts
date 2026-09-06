@@ -3,21 +3,7 @@
 import { unzipSync } from "fflate";
 import type { FileSystemTree, WebContainer, WebContainerProcess } from "@webcontainer/api";
 import { MAX_ARCHIVE_BYTES, MAX_EXPANDED_BYTES, MAX_FILE_BYTES, MAX_ARCHIVE_FILES, safeRepositoryPath } from "./archive-policy";
-
-const PREVIEW_BRIDGE = String.raw`(() => {
-  const params = new URLSearchParams(location.search);
-  const frameId = params.get("__ah_frame");
-  const initialY = Number(params.get("__ah_scroll_y") || 0);
-  const parentOrigin = document.referrer ? new URL(document.referrer).origin : "*";
-  let timer = 0;
-  const report = () => parent.postMessage({ type: "agent-harness:scroll", frameId, route: location.pathname, x: scrollX, y: scrollY, capturedAt: new Date().toISOString() }, parentOrigin);
-  addEventListener("scroll", () => { clearTimeout(timer); timer = setTimeout(report, 100); }, { passive: true });
-  addEventListener("load", () => { requestAnimationFrame(() => { scrollTo(0, initialY); report(); }); });
-  addEventListener("message", (event) => {
-    if (event.origin !== parentOrigin || event.data?.type !== "agent-harness:restore-scroll" || event.data.frameId !== frameId) return;
-    scrollTo(Number(event.data.x || 0), Number(event.data.y || 0));
-  });
-})();`;
+import { buildPreviewBridge } from './preview-bridge';
 
 export type LivePreviewStatus = "idle" | "downloading" | "mounting" | "installing" | "starting" | "ready" | "error";
 export type LivePreviewEvent = { status: LivePreviewStatus; message: string; url?: string };
@@ -102,7 +88,7 @@ export async function startLiveRepositoryPreview(input: { workspaceId: string; r
   await resetWorkspace(instance, input.workspaceId, files);
   // Preview-only injection covers Next as well as Vite without modifying the
   // authoritative layout/index file or adding publishable instrumentation.
-  await instance.setPreviewScript(PREVIEW_BRIDGE);
+  await instance.setPreviewScript(buildPreviewBridge(location.origin));
   const cwd = `/workspaces/${input.workspaceId}`;
   const { manager, install, start } = commands(files);
   if (manager !== "npm") { const corepack = await instance.spawn("corepack", ["enable"], { cwd }); if (await corepack.exit !== 0) throw new Error(`Unable to enable ${manager} in the preview runtime.`); }

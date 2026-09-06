@@ -29,19 +29,39 @@ export function normalizeScrollSnapshot(input: Partial<ScrollSnapshot> | null | 
     if (!item || typeof item.anchor !== "string" || !item.anchor.trim()) return [];
     return [{ anchor: item.anchor.slice(0, 500), x: finite(item.x), y: finite(item.y) }];
   }) : [];
-  return { windowX: finite(input?.windowX), windowY: finite(input?.windowY), containers, capturedAt: typeof input?.capturedAt === "string" ? input.capturedAt : "" };
+  return { windowX: finite(input?.windowX), windowY: finite(input?.windowY), containers, capturedAt: typeof input?.capturedAt === "string" ? input.capturedAt.slice(0, 64) : "" };
 }
 
 export function chooseLiveFrameIds(frames: RuntimeFrame[], selectedId: string, zoom: number, maxLive = 1): string[] {
-  if (zoom < 0.65 || maxLive < 1) return [];
+  if (!Number.isFinite(zoom) || !Number.isFinite(maxLive) || zoom < 0.65 || maxLive < 1) return [];
   const selected = frames.find((frame) => frame.id === selectedId);
   if (!selected) return [];
-  const limit = Math.max(1, Math.min(3, maxLive));
+  const limit = Math.max(1, Math.min(3, Math.floor(maxLive)));
   const pinned = frames.filter((frame) => frame.pinned && frame.id !== selectedId).slice(0, Math.max(0, limit - 1));
   const chosen = [selected, ...pinned];
   // Comparison frames require explicit pinning; being nearby is not consent
   // to mount another copy of an imported React application's client state.
   return chosen.map((frame) => frame.id);
+}
+
+export function scheduleFrameSurfaces(frames: RuntimeFrame[], selectedId: string, zoom: number, focusId: string | null, maxLive = 1) {
+  // Focus replaces the canvas instances. It is not an extra fourth renderer.
+  const focused = focusId && frames.some(frame => frame.id === focusId) ? focusId : null;
+  return focused ? { canvas: [] as string[], focus: focused, total: 1 } : (() => {
+    const canvas = chooseLiveFrameIds(frames, selectedId, zoom, maxLive);
+    return { canvas, focus: null, total: canvas.length };
+  })();
+}
+
+export function previewFrameUrl(baseUrl: string, route: string, frameId: string) {
+  const base = new URL(baseUrl);
+  if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password) throw new Error('Invalid preview origin.');
+  const url = new URL(route, base.origin);
+  if (!route.startsWith('/') || url.origin !== base.origin) throw new Error('A frame must stay within its repository preview.');
+  url.searchParams.set('__ah_frame', frameId);
+  // Scroll is a message, not a URL parameter: otherwise each save reloads React.
+  url.searchParams.delete('__ah_scroll_y');
+  return url.toString();
 }
 
 export function verificationLabel(state: VerificationState) {
