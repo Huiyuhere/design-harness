@@ -1,7 +1,8 @@
 "use client";
 
-import { strFromU8, unzipSync } from "fflate";
+import { unzipSync } from "fflate";
 import type { FileSystemTree, WebContainer, WebContainerProcess } from "@webcontainer/api";
+import { MAX_ARCHIVE_BYTES, MAX_EXPANDED_BYTES, MAX_FILE_BYTES, MAX_ARCHIVE_FILES, safeRepositoryPath } from "./archive-policy";
 
 const PREVIEW_BRIDGE = String.raw`(() => {
   const params = new URLSearchParams(location.search);
@@ -26,9 +27,10 @@ let activeProcess: WebContainerProcess | null = null;
 let activeWorkspace = "";
 
 function safeArchivePath(path: string) {
-  const normalized = path.replace(/\\/g, "/").split("/").slice(1).join("/");
-  if (!normalized || normalized.startsWith("/") || normalized.split("/").includes("..")) return null;
-  if (/^(?:node_modules|\.git|dist|build|\.next|coverage)(?:\/|$)/.test(normalized)) return null;
+  const normalized = path.split("/").slice(1).join("/").replace(/\/$/, "");
+  if (!normalized) return null;
+  safeRepositoryPath(normalized);
+  if (/(?:^|\/)(?:node_modules|\.git|dist|build|\.next|coverage)(?:\/|$)/.test(normalized)) return null;
   return normalized;
 }
 
@@ -40,34 +42,37 @@ function insertFile(root: FileSystemTree, path: string, bytes: Uint8Array) {
     if (!existing || !("directory" in existing)) current[part] = { directory: {} };
     current = (current[part] as { directory: FileSystemTree }).directory;
   }
-  const binary = /\.(?:png|jpe?g|gif|webp|avif|ico|woff2?|ttf|otf|pdf|zip)$/i.test(path);
-  current[parts.at(-1)!] = { file: { contents: binary ? bytes : strFromU8(bytes) } };
+  // Keeping bytes avoids corrupting unrecognized binary formats (e.g. MP4/WASM)
+  // and avoids another UTF-16 copy of the entire repository in memory.
+  current[parts.at(-1)!] = { file: { contents: bytes } };
 }
 
 export function repositoryArchiveToTree(archive: Uint8Array) {
-  const entries = unzipSync(archive);
-  const tree: FileSystemTree = {};
+  if (archive.byteLength > MAX_ARCHIVE_BYTES) throw new Error("Repository archive exceeds the 128 MiB transfer limit.");
   let total = 0; let count = 0;
+  // fflate invokes the filter using ZIP directory metadata, BEFORE inflation.
+  // The old post-inflate check could allocate a ZIP bomb before rejecting it.
+  const entries = unzipSync(archive, { filter: (entry) => {
+    const path = safeArchivePath(entry.name);
+    if (!path || entry.name.endsWith('/')) return false;
+    if (entry.originalSize > MAX_FILE_BYTES) throw new Error(`${path} exceeds the 16 MiB per-file preview limit.`);
+    total += entry.originalSize; count++;
+    if (total > MAX_EXPANDED_BYTES || count > MAX_ARCHIVE_FILES) throw new Error("Repository exceeds the 128 MiB expanded / 10,000-file preview limit.");
+    return true;
+  } });
+  const tree: FileSystemTree = {};
   for (const [archivePath, bytes] of Object.entries(entries)) {
     const path = safeArchivePath(archivePath);
     if (!path || archivePath.endsWith("/")) continue;
-    if (bytes.byteLength > 5 * 1024 * 1024) throw new Error(`${path} exceeds the 5 MB per-file preview limit.`);
-    total += bytes.byteLength; count += 1;
-    if (total > 25 * 1024 * 1024 || count > 1_500) throw new Error("Repository exceeds the bounded live-preview import limits.");
-    if (path === "index.html") {
-      const html = strFromU8(bytes);
-      const tag = '<script src="/__agent-harness-bridge.js"></script>';
-      insertFile(tree, path, new TextEncoder().encode(html.includes("</head>") ? html.replace("</head>", `${tag}</head>`) : `${tag}${html}`));
-    } else insertFile(tree, path, bytes);
+    insertFile(tree, path, bytes);
   }
   if (!tree["package.json"]) throw new Error("This repository has no root package.json. Monorepo package selection is not available yet.");
-  insertFile(tree, "public/__agent-harness-bridge.js", new TextEncoder().encode(PREVIEW_BRIDGE));
   return tree;
 }
 
 async function container() {
   if (!globalThis.crossOriginIsolated || typeof SharedArrayBuffer === "undefined") throw new Error("Live preview requires desktop Chromium with cross-origin isolation.");
-  containerPromise ??= import("@webcontainer/api").then(({ WebContainer }) => WebContainer.boot({ coep: "credentialless" }));
+  containerPromise ??= import("@webcontainer/api").then(({ WebContainer }) => WebContainer.boot({ coep: "credentialless" })).catch(error => { containerPromise = null; throw error; });
   return containerPromise;
 }
 
@@ -87,23 +92,33 @@ function commands(files: FileSystemTree) {
 export async function startLiveRepositoryPreview(input: { workspaceId: string; repositoryUrl: string; ref: string; onEvent: (event: LivePreviewEvent) => void }) {
   input.onEvent({ status: "downloading", message: "Downloading the approved repository archive…" });
   const response = await fetch(`/api/github/archive?repositoryUrl=${encodeURIComponent(input.repositoryUrl)}&ref=${encodeURIComponent(input.ref)}`, { cache: "no-store" });
-  if (!response.ok) { const payload = await response.json().catch(() => ({ error: "Archive download failed." })); throw new Error(payload.error); }
-  const files = repositoryArchiveToTree(new Uint8Array(await response.arrayBuffer()));
+  if (!response.ok) { const payload = await response.json().catch(() => ({ error: "Archive download failed." })) as { error?: string }; throw new Error(payload.error ?? "Archive download failed."); }
+  let bytes: Uint8Array;
+  try { bytes = new Uint8Array(await response.arrayBuffer()); }
+  catch { throw new Error("Archive transfer was interrupted or exceeded its limit. Retry after checking repository size and connection."); }
+  const files = repositoryArchiveToTree(bytes);
   input.onEvent({ status: "mounting", message: "Mounting one bounded source tree…" });
   const instance = await container();
   await resetWorkspace(instance, input.workspaceId, files);
+  // Preview-only injection covers Next as well as Vite without modifying the
+  // authoritative layout/index file or adding publishable instrumentation.
+  await instance.setPreviewScript(PREVIEW_BRIDGE);
   const cwd = `/workspaces/${input.workspaceId}`;
   const { manager, install, start } = commands(files);
   if (manager !== "npm") { const corepack = await instance.spawn("corepack", ["enable"], { cwd }); if (await corepack.exit !== 0) throw new Error(`Unable to enable ${manager} in the preview runtime.`); }
   input.onEvent({ status: "installing", message: `Installing locked dependencies with ${manager}…` });
   const installProcess = await instance.spawn(install[0], install[1], { cwd });
-  if (await installProcess.exit !== 0) throw new Error("Dependency installation failed. Review the repository scripts and lockfile before retrying.");
+  let installLog = "";
+  const drain = installProcess.output.pipeTo(new WritableStream({ write(chunk) { installLog = (installLog + chunk).slice(-2000); } }));
+  const installCode = await installProcess.exit; await drain;
+  if (installCode !== 0) throw new Error(`Dependency installation failed. ${installLog.replace(/\x1b\[[0-9;]*m/g, '').slice(-900)}`);
   input.onEvent({ status: "starting", message: "Starting the repository dev server…" });
   const url = await new Promise<string>((resolve, reject) => {
     const timer = window.setTimeout(() => reject(new Error("The dev server did not become ready within two minutes.")), 120_000);
     const unsubscribe = instance.on("server-ready", (_port, readyUrl) => { window.clearTimeout(timer); unsubscribe(); resolve(readyUrl); });
     void instance.spawn(start[0], start[1], { cwd }).then((process) => {
       activeProcess = process;
+      void process.output.pipeTo(new WritableStream({ write() {} })).catch(() => undefined);
       void process.exit.then((code) => { if (code !== 0) { window.clearTimeout(timer); reject(new Error(`The dev server stopped with exit code ${code}.`)); } });
     }, reject);
   });
@@ -112,12 +127,15 @@ export async function startLiveRepositoryPreview(input: { workspaceId: string; r
 }
 
 export async function readLiveSource(path: string) {
+  safeRepositoryPath(path);
   const instance = await container();
   if (!activeWorkspace) throw new Error("Start the live repository preview first.");
   return instance.fs.readFile(`/workspaces/${activeWorkspace}/${path}`, "utf-8");
 }
 
 export async function writeLiveSource(path: string, content: string) {
+  safeRepositoryPath(path);
+  if (/^\.github\/workflows\//i.test(path)) throw new Error("Workflow files cannot be changed by Design Harness.");
   const instance = await container();
   if (!activeWorkspace) throw new Error("Start the live repository preview first.");
   const fullPath = `/workspaces/${activeWorkspace}/${path}`;
@@ -128,4 +146,9 @@ export async function writeLiveSource(path: string, content: string) {
 
 export async function stopLiveRepositoryPreview() {
   if (activeProcess) { activeProcess.kill(); activeProcess = null; }
+  if (containerPromise && activeWorkspace) {
+    const instance = await containerPromise;
+    await instance.fs.rm(`/workspaces/${activeWorkspace}`, { recursive: true, force: true });
+    activeWorkspace = "";
+  }
 }

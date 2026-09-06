@@ -1,12 +1,13 @@
 import { readCookie } from "./api-key-session";
 import type { RequestUser } from "./request-security";
+import { boundedResponseText, GitHubImportError } from "./github-import";
 
 export const GITHUB_STATE_COOKIE = "design_harness_github_state";
 export const GITHUB_INSTALLATION_COOKIE = "design_harness_github_installation";
 export const GITHUB_APP_COOKIE = "design_harness_github_app";
 
 type GitHubState = { state: string; expiresAt: number };
-export type GitHubInstallationSession = { installationId: number; connectedAt: string };
+export type GitHubInstallationSession = { installationId: number; connectedAt: string; verifiedAt?: string; appId?: string; permissions?: { contents: string; pullRequests: string } };
 export type GitHubAppConfiguration = { appId: string; slug: string; privateKey: string; createdAt: string };
 
 const encoder = new TextEncoder();
@@ -41,8 +42,8 @@ async function seal(value: unknown, userId: string, purpose: string, secret: str
 
 async function unseal<T>(value: string, userId: string, purpose: string, secret: string): Promise<T | null> {
   try {
-    const [version, iv, payload] = value.split(".");
-    if (version !== "v1" || !iv || !payload) return null;
+    const [version, iv, payload, extra] = value.split(".");
+    if (version !== "v1" || !iv || !payload || extra !== undefined) return null;
     const decrypted = await crypto.subtle.decrypt(
       { name: "AES-GCM", iv: decodeBase64Url(iv), additionalData: encoder.encode(`${purpose}:${userId}`) },
       await aesKey(secret),
@@ -69,7 +70,9 @@ function environmentConfiguration(): GitHubAppConfiguration | null {
 export async function githubAppCookie(configuration: GitHubAppConfiguration, user: RequestUser) {
   const secret = process.env.API_KEY_ENCRYPTION_KEY;
   if (!secret) throw new Error("Secure GitHub App sessions are not configured.");
-  return cookie(GITHUB_APP_COOKIE, await seal(configuration, user.userId, "app-configuration", secret), 30 * 24 * 60 * 60, "Strict");
+  const result = cookie(GITHUB_APP_COOKIE, await seal(configuration, user.userId, "app-configuration", secret), 30 * 24 * 60 * 60, "Strict");
+  if (result.length > 4000) throw new Error("This GitHub App key exceeds the secure browser-session limit. The Site owner must configure the App through hosted secrets.");
+  return result;
 }
 
 export async function githubAppFromRequest(request: Pick<Request, "headers">, user: RequestUser) {
@@ -83,13 +86,15 @@ export async function githubAppFromRequest(request: Pick<Request, "headers">, us
   return configuration;
 }
 
-export function githubManifest(origin: string, user: RequestUser, state?: string) {
+export function githubManifest(origin: string, user: RequestUser) {
   const ownerHint = user.displayName.replace(/[^A-Za-z0-9 ]/g, "").trim().slice(0, 30) || "Designer";
   const ownerId = user.userId.replace(/[^A-Za-z0-9]/g, "").slice(-8) || "personal";
   return {
     name: `Design Harness — ${ownerHint} ${ownerId}`,
     url: origin,
-    redirect_url: `${origin}/api/github/manifest/callback${state ? `?state=${encodeURIComponent(state)}` : ""}`,
+    // GitHub appends code and the registration form's state itself. A query
+    // here is rejected by GitHub's manifest URL validation.
+    redirect_url: `${origin}/api/github/manifest/callback`,
     setup_url: `${origin}/api/github/callback`,
     description: "Repository-scoped source import and approved design pull requests for Design Harness.",
     public: false,
@@ -177,6 +182,22 @@ async function appJwt(configuration: GitHubAppConfiguration) {
   return `${header}.${payload}.${base64Url(new Uint8Array(signature))}`;
 }
 
+export async function verifyGitHubInstallation(installationId: number, configuration: GitHubAppConfiguration) {
+  if (!Number.isSafeInteger(installationId) || installationId < 1) throw new GitHubImportError("Invalid GitHub installation.", 400, true);
+  const response = await fetch(`https://api.github.com/app/installations/${installationId}`, {
+    headers: { Accept: "application/vnd.github+json", Authorization: `Bearer ${await appJwt(configuration)}`, "User-Agent": "design-harness", "X-GitHub-Api-Version": "2022-11-28" },
+    signal: AbortSignal.timeout(20_000), cache: "no-store",
+  });
+  if (!response.ok) {
+    await response.body?.cancel();
+    throw new GitHubImportError("GitHub could not verify this installation. Reconnect the App and confirm repository access.", response.status === 404 ? 404 : 403, true);
+  }
+  const data = JSON.parse(await boundedResponseText(response, 256 * 1024)) as { id?: number; app_id?: number; suspended_at?: string | null; permissions?: { contents?: string; pull_requests?: string } };
+  if (data.id !== installationId || String(data.app_id) !== configuration.appId || data.suspended_at) throw new GitHubImportError("This installation belongs to another App or is suspended. Reconnect the correct Design Harness App.", 403, true);
+  if (!["read", "write"].includes(data.permissions?.contents ?? "")) throw new GitHubImportError("This installation does not allow repository contents to be read. Review the App permissions on GitHub.", 403, true);
+  return { verifiedAt: new Date().toISOString(), appId: configuration.appId, permissions: { contents: data.permissions!.contents!, pullRequests: data.permissions?.pull_requests ?? "none" } };
+}
+
 export async function installationAccessToken(installationId: number, repository: string, configuration: GitHubAppConfiguration, mode: "read" | "publish" = "read") {
   const response = await fetch(`https://api.github.com/app/installations/${installationId}/access_tokens`, {
     method: "POST",
@@ -188,12 +209,14 @@ export async function installationAccessToken(installationId: number, repository
       "X-GitHub-Api-Version": "2022-11-28",
     },
     body: JSON.stringify({ repositories: [repository], permissions: mode === "publish" ? { contents: "write", pull_requests: "write" } : { contents: "read" } }),
+    signal: AbortSignal.timeout(20_000), cache: "no-store",
   });
   if (!response.ok) {
-    const error = await response.json().catch(() => null) as { message?: string } | null;
-    throw new Error(error?.message ?? `GitHub App token request failed (${response.status}).`);
+    await response.body?.cancel();
+    const limited = response.status === 429 || response.headers.get("x-ratelimit-remaining") === "0" || Number(response.headers.get("retry-after")) > 0;
+    throw new GitHubImportError(limited ? "GitHub temporarily limited this installation. Wait before retrying." : "GitHub could not grant access to this repository. Reconnect the App and check the selected repositories.", limited ? 429 : 403, !limited, limited ? 60 : undefined);
   }
-  const payload = await response.json() as { token?: string; expires_at?: string };
+  const payload = JSON.parse(await boundedResponseText(response, 256 * 1024)) as { token?: string; expires_at?: string };
   if (!payload.token) throw new Error("GitHub did not return an installation token.");
   return { token: payload.token, expiresAt: payload.expires_at ?? null };
 }

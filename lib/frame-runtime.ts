@@ -32,22 +32,15 @@ export function normalizeScrollSnapshot(input: Partial<ScrollSnapshot> | null | 
   return { windowX: finite(input?.windowX), windowY: finite(input?.windowY), containers, capturedAt: typeof input?.capturedAt === "string" ? input.capturedAt : "" };
 }
 
-export function chooseLiveFrameIds(frames: RuntimeFrame[], selectedId: string, zoom: number, maxLive = 2): string[] {
+export function chooseLiveFrameIds(frames: RuntimeFrame[], selectedId: string, zoom: number, maxLive = 1): string[] {
   if (zoom < 0.65 || maxLive < 1) return [];
   const selected = frames.find((frame) => frame.id === selectedId);
   if (!selected) return [];
   const limit = Math.max(1, Math.min(3, maxLive));
   const pinned = frames.filter((frame) => frame.pinned && frame.id !== selectedId).slice(0, Math.max(0, limit - 1));
   const chosen = [selected, ...pinned];
-  if (chosen.length < limit) {
-    const center = (frame: RuntimeFrame) => ({ x: frame.x + frame.width / 2, y: frame.y + frame.height / 2 });
-    const origin = center(selected);
-    const nearby = frames.filter((frame) => !chosen.some((item) => item.id === frame.id)).sort((a, b) => {
-      const ac = center(a); const bc = center(b);
-      return Math.hypot(ac.x - origin.x, ac.y - origin.y) - Math.hypot(bc.x - origin.x, bc.y - origin.y);
-    });
-    chosen.push(...nearby.slice(0, limit - chosen.length));
-  }
+  // Comparison frames require explicit pinning; being nearby is not consent
+  // to mount another copy of an imported React application's client state.
   return chosen.map((frame) => frame.id);
 }
 

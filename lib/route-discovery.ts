@@ -1,18 +1,23 @@
 export type DiscoveredRoute = { route: string; file: string; dynamic: boolean; framework: "next-app" | "next-pages" | "react-router" };
 
 function normalizeNextSegment(segment: string) {
-  if (segment === "page.tsx" || segment === "page.jsx" || segment === "index.tsx" || segment === "index.jsx") return "";
-  return segment.replace(/\.(?:t|j)sx$/, "").replace(/^\((.*)\)$/, "");
+  if (/^\(.+\)$/.test(segment)) return "";
+  if (/^(?:page|index)\.(?:t|j)sx?$/.test(segment)) return "";
+  return segment.replace(/\.(?:t|j)sx?$/, "");
 }
 
 export function discoverFileRoutes(files: string[]): DiscoveredRoute[] {
   const routes: DiscoveredRoute[] = [];
   for (const file of files) {
-    if (/^app\/.+\/page\.(?:t|j)sx$/.test(file) || /^app\/page\.(?:t|j)sx$/.test(file)) {
-      const parts = file.split("/").slice(1).map(normalizeNextSegment).filter(Boolean);
+    const relative = file.replace(/^src\//, '');
+    if (/^app\/(?:.*\/)?page\.(?:t|j)sx?$/.test(relative)) {
+      // Parallel and intercepting routes need explicit state fixtures, not
+      // invented top-level URL paths.
+      if (relative.split('/').some(part=>part.startsWith('@') || /^\(\.{1,3}\)/.test(part))) continue;
+      const parts = relative.split("/").slice(1).map(normalizeNextSegment).filter(Boolean);
       routes.push({ route: `/${parts.join("/")}`, file, dynamic: parts.some((part) => part.includes("[")), framework: "next-app" });
-    } else if (/^pages\/.+\.(?:t|j)sx$/.test(file) && !/^pages\/(?:_app|_document|api\/)/.test(file)) {
-      const parts = file.split("/").slice(1).map(normalizeNextSegment).filter(Boolean);
+    } else if (/^pages\/.+\.(?:t|j)sx?$/.test(relative) && !/^pages\/(?:_app\.|_document\.|_error\.|api\/)/.test(relative) && !relative.endsWith('.d.ts')) {
+      const parts = relative.split("/").slice(1).map(normalizeNextSegment).filter(Boolean);
       routes.push({ route: `/${parts.join("/")}`, file, dynamic: parts.some((part) => part.includes("[")), framework: "next-pages" });
     }
   }

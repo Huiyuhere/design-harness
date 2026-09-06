@@ -18,3 +18,9 @@ test("discovers React Router and Wouter routes from source", () => {
   assert.deepEqual(routes.map((item) => item.route), ["/", "/pricing", "/users/:id"]);
   assert.equal(routes[2].dynamic, true);
 });
+
+test("src roots and route groups map to real URLs, not fictional group paths", () => {
+  const routes = discoverFileRoutes(["src/app/(marketing)/page.js", "src/app/(marketing)/pricing/page.tsx", "src/app/account/page.ts", "src/app/@modal/(.)login/page.tsx", "src/app/(..)intercept/page.tsx", "src/pages/_error.js", "src/pages/api/status.ts", "src/pages/help/index.jsx"]);
+  assert.deepEqual(routes.map(route => route.route), ["/", "/account", "/help", "/pricing"]);
+  assert.equal(routes[0].file, "src/app/(marketing)/page.js");
+});

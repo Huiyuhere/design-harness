@@ -1,5 +1,6 @@
 @import "tailwindcss";
 @import "./enhancements.css";
+@import "./canvas-clarity.css";
 
 :root { --ink: #202225; --muted: #72757c; --line: #deded9; --panel: #f7f7f4; --canvas: #ececea; --accent: #ff5c35; --blue: #315efb; }
 * { box-sizing: border-box; }

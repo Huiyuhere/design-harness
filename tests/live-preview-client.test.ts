@@ -12,6 +12,6 @@ test("converts a bounded GitHub zipball into one source tree and drops generated
   });
   const tree = repositoryArchiveToTree(archive);
   assert.ok(tree["package.json"]); assert.ok(tree.src); assert.equal(tree.node_modules, undefined);
-  assert.ok(tree.public && "directory" in tree.public && tree.public.directory["__agent-harness-bridge.js"]);
-  assert.match((tree["index.html"] as { file: { contents: string } }).file.contents, /__agent-harness-bridge\.js/);
+  assert.equal(tree.public, undefined);
+  assert.equal(new TextDecoder().decode((tree["index.html"] as { file: { contents: Uint8Array } }).file.contents), '<html><head></head><body><div id="root"></div></body></html>');
 });

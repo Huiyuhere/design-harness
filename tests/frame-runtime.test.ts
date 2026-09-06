@@ -7,7 +7,8 @@ const frames = Array.from({ length: 8 }, (_, index) => ({ id: `frame-${index}`, 
 test("keeps one to three live frames and disables them below the thumbnail zoom threshold", () => {
   assert.deepEqual(chooseLiveFrameIds(frames, "frame-0", 0.64, 3), []);
   assert.deepEqual(chooseLiveFrameIds(frames, "frame-0", 0.82, 2), ["frame-0", "frame-7"]);
-  assert.deepEqual(chooseLiveFrameIds(frames, "frame-0", 0.82, 3), ["frame-0", "frame-7", "frame-1"]);
+  assert.deepEqual(chooseLiveFrameIds(frames, "frame-0", 0.82, 3), ["frame-0", "frame-7"]);
+  assert.deepEqual(chooseLiveFrameIds(frames, "frame-0", 0.82), ["frame-0"]);
 });
 
 test("normalizes bounded scroll state and honest verification labels", () => {

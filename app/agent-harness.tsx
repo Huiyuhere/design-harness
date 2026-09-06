@@ -17,6 +17,8 @@ import { ACTIONS_LIMITATIONS, ValidationStatus } from "../lib/visual-validation"
 import { chooseLiveFrameIds, EMPTY_SCROLL, PreviewRepresentation, RESPONSIVE_PROFILES, ResponsiveProfile, ScrollSnapshot, VerificationState, verificationLabel } from "../lib/frame-runtime";
 import { activeAgentJobs, AgentDesignJob, MAX_PARALLEL_AGENT_JOBS, mayStartAgentJob, parseAgentPatch, visibleAgentReply } from "../lib/agent-jobs";
 import type { LivePreviewEvent } from "../lib/live-preview-client";
+import { IconControl, WorkspaceSetup } from "./canvas-controls";
+import { useDisplayDates } from "../lib/display-dates";
 
 type CanvasMode = "edit" | "prototype" | "graph";
 type InspectorTab = "design" | "layers" | "code" | "changes";
@@ -26,12 +28,11 @@ type EditTransaction = { id: string; workspaceId: string; frameId: string; times
 type ApiKeyStatus = { loading: boolean; connected: boolean; masked?: string; models: string[]; validatedAt?: string };
 type GitHubStatus = { loading: boolean; configured: boolean; connected: boolean; setupAvailable?: boolean; connectedAt?: string; permissions?: { metadata: string; contents: string; pullRequests: string; workflows: string }; tokenPolicy?: string };
 type AgentReceipt = { selected?: { frames?: string[]; files?: string[]; target?: { frameId?: string; node?: string; label?: string } }; documents?: unknown[]; approvedMemories?: unknown[]; openFlowGaps?: unknown[]; attachedGapId?: string | null };
+type RepositoryImportResponse = { error?: string; routes: Array<{ route: string; file?: string }>; repository: { name: string; fullName: string; url: string; baseSha: string }; brand: WorkspaceSpec["brand"] };
 const INTERACTION_NODES: TextNodeKey[] = ["navProduct", "navCompany", "navDocs", "navAction", "primaryAction", "secondaryAction"];
 
 const now = () => new Date().toISOString();
 const INITIAL_STAMP = "2026-08-29T01:00:00.000Z";
-const timeLabel = (value: string) => new Date(value).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-const dateLabel = (value: string) => new Date(value).toLocaleDateString([], { month: "short", day: "numeric" });
 const DEFAULT_BRAND = { colors: ["#202225", "#315EFB", "#FF6B47", "#F7F7F4"], fonts: ["Inter", "Geist", "IBM Plex Sans"], sourceFiles: ["styles/tokens.css", "app/globals.css"], documents: [] as BrandDocument[] };
 const baseDesign = (headline: string, supporting: string) => createRouteDesign(headline, supporting);
 const routeDesign = (headline: string, supporting: string, content: Partial<RouteDesignData["content"]> = {}, centered = false) => { const design = createRouteDesign(headline, supporting); design.content = { ...design.content, ...content }; if (centered) { design.styles.headline.align = "center"; design.styles.supporting.align = "center"; design.styles.eyebrow.align = "center"; } return design; };
@@ -119,6 +120,7 @@ function DesignAgentDock({ jobs, activeJobId, composer, composerRef, intent, fra
   onSelectJob: (id: string) => void; onComposer: (value: string) => void; onIntent: (intent: "discuss" | "edit") => void; onSend: () => void; onStop: (id: string) => void; onApply: (id: string) => void; onFocusFrame: (id: string) => void; onClearGap: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const { timeLabel } = useDisplayDates();
   const running = activeAgentJobs(jobs).length;
   const selectedJob = jobs.find((job) => job.id === activeJobId) ?? jobs[0];
   return <section className={`agent-dock command-dock ${expanded ? "expanded" : "collapsed"}`}>
@@ -135,12 +137,12 @@ function DesignAgentDock({ jobs, activeJobId, composer, composerRef, intent, fra
           {selectedJob.patch?.operation === "replace_text" && <div className="agent-patch-review"><header><span>Proposed text edit</span><small>Approval required</small></header><div><del>{selectedJob.before}</del><ArrowRight size={13} /><ins>{selectedJob.patch.after}</ins></div><p>{selectedJob.patch.rationale}</p></div>}
           {selectedJob.patch?.operation === "create_route" && <div className="agent-patch-review route-patch-review"><header><span>Page + route patch</span><small>Approval required</small></header><div className="route-patch-flow"><b>{selectedJob.nodeLabel}</b><ArrowRight size={13} /><ins>{selectedJob.patch.route}</ins></div><h4>{selectedJob.patch.headline}</h4><p>{selectedJob.patch.supporting}</p><small>Creates {selectedJob.patch.pageName}, connects the selected control, and inherits the current route hierarchy.</small></div>}
           <footer><div>{selectedJob.durationMs != null && <span>{timeLabel(selectedJob.finishedAt ?? selectedJob.createdAt)} · {(selectedJob.durationMs / 1000).toFixed(1)}s</span>}<button onClick={() => navigator.clipboard.writeText(visibleAgentReply(selectedJob.reply))} disabled={!selectedJob.reply}><Copy size={12} />Copy response</button></div>{selectedJob.status === "thinking" ? <button className="danger-action" onClick={() => onStop(selectedJob.id)}><CircleStop size={13} />Stop</button> : selectedJob.patch && selectedJob.status === "ready" ? <button className="apply-agent-patch" onClick={() => onApply(selectedJob.id)}><Check size={13} />{selectedJob.patch.operation === "create_route" ? `Build ${selectedJob.patch.route}` : `Apply to ${selectedJob.frameName}`}</button> : null}</footer>
-        </div> : <div className="agent-first-use"><strong>Make a precise design change</strong><div><span>1</span><p><b>Select</b> a screen and element on the canvas or in Layers.</p></div><div><span>2</span><p><b>Describe</b> the copy or design outcome you want.</p></div><div><span>3</span><p><b>Review and apply</b> the proposed patch; the matching frame refreshes.</p></div></div>}
+        </div> : <div className="agent-quick-start" aria-label="Select an element, describe a change, then review the patch"><span><MousePointer2 size={16} />Select</span><ChevronRight size={12} /><span><Sparkles size={16} />Describe</span><ChevronRight size={12} /><span><Check size={16} />Review</span></div>}
         <div className="agent-target-bar"><span>Target</span><button>{frameName} · {route}</button><i>›</i><button>{nodeLabel}</button>{sourceFile && <><i>›</i><code>{sourceFile}</code></>}</div>
         <div className="agent-intent-toggle"><button disabled={Boolean(lockedReason)} className={intent === "edit" ? "active" : ""} onClick={() => onIntent("edit")}><Code2 size={12} />Propose an edit</button><button disabled={Boolean(lockedReason)} className={intent === "discuss" ? "active" : ""} onClick={() => onIntent("discuss")}><Bot size={12} />Discuss only</button><span>Edits never apply automatically</span></div>
         {attachedGap && <div className="agent-gap-context"><AlertTriangle size={12} /><span>Flow gap: {attachedGap.label}</span><button onClick={onClearGap}>×</button></div>}
         <div className="agent-composer-row"><textarea disabled={Boolean(lockedReason)} ref={composerRef} value={composer} onChange={(event) => onComposer(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); onSend(); } }} placeholder={lockedReason ?? (intent === "edit" ? `Example: Rewrite “${nodeLabel}” to sound clearer and more confident` : "Ask for critique, alternatives, or a flow recommendation")} /><button className="send-button" onClick={onSend} disabled={Boolean(lockedReason) || !composer.trim()}><ArrowUp size={17} /></button></div>
-        <footer className="agent-command-footer"><span><Sparkles size={11} />gpt-5.4 mini · {keyLabel}</span><span>Agent proposes executable changes · approval gates every write</span></footer>
+        <footer className="agent-command-footer"><span><Sparkles size={11} />gpt-5.4 mini · {keyLabel}</span><span><ShieldCheck size={12} />Approval required</span></footer>
       </>}
     </div>
   </section>;
@@ -149,6 +151,7 @@ function DesignAgentDock({ jobs, activeJobId, composer, composerRef, intent, fra
 function FramePreview({ frame, design, mode, active, selectedNode, targets, gapCount, representation, liveBaseUrl, onSelect, onNavigate, onMissing, onInlineText, onFocus, onPin }: {
   frame: FrameSpec; design: RouteDesignData; mode: CanvasMode; active: boolean; selectedNode: TextNodeKey; targets: Partial<Record<TextNodeKey, FrameSpec>>; gapCount: number; representation: PreviewRepresentation; liveBaseUrl: string | null; onSelect: (node: TextNodeKey) => void; onNavigate: (target: string) => void; onMissing: (node: TextNodeKey) => void; onInlineText: (node: TextNodeKey, text: string) => void; onFocus: () => void; onPin: () => void;
 }) {
+  const { timeLabel, dateLabel } = useDisplayDates();
   const choose = (event: React.MouseEvent, node: TextNodeKey) => { if (mode === "edit") { event.stopPropagation(); onSelect(node); } };
   const go = (event: React.MouseEvent, node: TextNodeKey) => { event.stopPropagation(); if (mode === "prototype") { const target = targets[node]; if (target) onNavigate(target.id); else onMissing(node); } else if (mode === "edit") onSelect(node); };
   const flowClass = (node: TextNodeKey) => mode !== "prototype" ? "" : targets[node] ? "flow-linked" : "flow-missing";
@@ -188,6 +191,7 @@ function FramePreview({ frame, design, mode, active, selectedNode, targets, gapC
 }
 
 export function AgentHarness() {
+  const { timeLabel, dateLabel } = useDisplayDates();
   const canvasRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceSpec[]>([firstWorkspace]);
@@ -240,7 +244,7 @@ export function AgentHarness() {
   useEffect(() => {
     let active = true;
     void fetch("/api/github/status", { cache: "no-store" }).then(async (response) => {
-      const payload = await response.json().catch(() => ({}));
+      const payload = await response.json().catch(() => ({})) as Partial<GitHubStatus>;
       if (active) setGitHubStatus({ loading: false, configured: Boolean(payload.configured), connected: Boolean(payload.connected), setupAvailable: Boolean(payload.setupAvailable), connectedAt: payload.connectedAt, permissions: payload.permissions, tokenPolicy: payload.tokenPolicy });
     }).catch(() => { if (active) setGitHubStatus({ loading: false, configured: false, connected: false }); });
     return () => { active = false; };
@@ -262,7 +266,7 @@ export function AgentHarness() {
   useEffect(() => {
     let active = true;
     void fetch("/api/settings/openai-key", { cache: "no-store" }).then(async (response) => {
-      const payload = await response.json().catch(() => ({ connected: false }));
+      const payload = await response.json().catch(() => ({ connected: false })) as Partial<ApiKeyStatus>;
       if (!active) return;
       const status = { loading: false, connected: Boolean(payload.connected), masked: payload.masked, models: Array.isArray(payload.models) ? payload.models : [], validatedAt: payload.validatedAt };
       setKeyStatus(status);
@@ -337,7 +341,7 @@ export function AgentHarness() {
     if (!/^[a-f0-9]{7,64}$/i.test(workspace.baseSha)) { setValidationStatus("not_verified"); return; }
     try {
       const response = await fetch(`/api/projects/${encodeURIComponent(workspace.id)}/validations`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: projectPayload, commitSha: workspace.baseSha, affectedRoutes: [...new Set(workspace.frames.map((frame) => frame.route))], trusted: true, workflowInstalled: false }) });
-      const payload = await response.json(); if (!response.ok) throw new Error(payload.error ?? "Unable to register validation setup.");
+      const payload = await response.json() as { error?: string; status: ValidationStatus }; if (!response.ok) throw new Error(payload.error ?? "Unable to register validation setup.");
       setValidationStatus(payload.status); setToast("Verification remains unavailable until the repository workflow is installed."); window.setTimeout(() => setToast(null), 2600);
     } catch (error) { setValidationStatus("actions_disabled"); setToast((error as Error).message); window.setTimeout(() => setToast(null), 2600); }
   };
@@ -347,7 +351,7 @@ export function AgentHarness() {
     setKeyValidating(true); setKeyError(null);
     try {
       const response = await fetch("/api/settings/openai-key/validate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ apiKey: apiKey.trim() }) });
-      const payload = await response.json().catch(() => ({ error: "Key validation failed." }));
+      const payload = await response.json().catch(() => ({ error: "Key validation failed." })) as Partial<ApiKeyStatus> & { error?: string };
       if (!response.ok) throw new Error(payload.error);
       setKeyStatus({ loading: false, connected: true, masked: payload.masked, models: payload.models ?? [], validatedAt: payload.validatedAt });
       setApiKey(""); setKeyModal(false); setToast(`Personal key connected · ${payload.masked}`); window.setTimeout(() => setToast(null), 2200);
@@ -404,7 +408,7 @@ export function AgentHarness() {
     if (!trusted) { setImportError("Confirm that you trust this repository before importing its code."); return; }
     setImporting(true); setImportError(null);
     try {
-      const response = await fetch("/api/github/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repositoryUrl }) }); const payload = await response.json();
+      const response = await fetch("/api/github/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repositoryUrl }) }); const payload = await response.json() as RepositoryImportResponse;
       if (!response.ok) throw new Error(payload.error ?? "Import failed.");
       const stamp = now(); const id = crypto.randomUUID(); const discovered = payload.routes.length ? payload.routes : [{ route: "/", file: "src/App.tsx" }];
       const frames: FrameSpec[] = discovered.slice(0, 30).flatMap((route: { route: string; file?: string }, routeIndex: number) => {
@@ -426,7 +430,7 @@ export function AgentHarness() {
     setBrandBusy("extract"); setBrandError(null);
     try {
       const response = await fetch("/api/projects/context", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "extract", ...brandRequest() }) });
-      const payload = await response.json(); if (!response.ok) throw new Error(payload.error ?? "Extraction failed.");
+      const payload = await response.json() as { error?: string; summary: { rules: string[]; authoritative?: unknown[] }; documents: BrandDocument[] }; if (!response.ok) throw new Error(payload.error ?? "Extraction failed.");
       setBrandSummary(payload.summary); setWorkspaces((items) => items.map((item) => item.id === workspace.id ? { ...item, brand: { ...item.brand, documents: payload.documents } } : item));
       setToast(`Brand context extracted · ${payload.summary.rules.length} active rules`); window.setTimeout(() => setToast(null), 2200);
     } catch (error) { setBrandError((error as Error).message); } finally { setBrandBusy(null); }
@@ -442,7 +446,7 @@ export function AgentHarness() {
     setBrandBusy("improve"); setBrandError(null);
     try {
       const response = await fetch("/api/projects/context", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "improve", ...brandRequest() }) });
-      const payload = await response.json();
+      const payload = await response.json() as { error?: string; proposals: DocumentProposal[] };
       if (response.status === 401) { setKeyStatus({ loading: false, connected: false, models: [] }); setKeyModal(true); }
       if (!response.ok) throw new Error(payload.error ?? "Document improvement failed.");
       setDocumentProposals(payload.proposals);
@@ -454,7 +458,7 @@ export function AgentHarness() {
     const currentHash = current ? await sha256(current.content) : undefined;
     try {
       const response = await fetch("/api/projects/context", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action, project: projectPayload, proposalId: proposal.id, currentHash }) });
-      const payload = await response.json(); if (!response.ok) throw new Error(payload.error ?? "Unable to update the proposal.");
+      const payload = await response.json() as { error?: string }; if (!response.ok) throw new Error(payload.error ?? "Unable to update the proposal.");
       setDocumentProposals((items) => items.map((item) => item.id === proposal.id ? { ...item, status: action === "apply" ? "applied" : "rejected" } : item));
       if (action === "apply") {
         const sourceHash = await sha256(proposal.proposedContent); const document: BrandDocument = { path: proposal.path, kind: proposal.kind, content: proposal.proposedContent, sourceHash };
@@ -469,7 +473,7 @@ export function AgentHarness() {
     if (!composer.trim() || !requireAgentKey()) return;
     const sourceRouteId = frameRouteIdentity(selectedSpec); const scopeKey = selectedSpec.sourceFile ?? sourceRouteId;
     const permission = mayStartAgentJob(agentJobsRef.current, scopeKey);
-    if (!permission.allowed) { if (permission.conflictId) setActiveAgentJobId(permission.conflictId); setToast(permission.reason); window.setTimeout(() => setToast(null), 2800); return; }
+    if (!permission.allowed) { if (permission.conflictId) setActiveAgentJobId(permission.conflictId); setToast(permission.reason ?? "Wait for this source scope to finish."); window.setTimeout(() => setToast(null), 2800); return; }
     const prompt = composer.trim(); const jobId = crypto.randomUUID(); const startedAt = performance.now(); const controller = new AbortController(); const gapId = attachedGap?.id ?? null;
     const job: AgentDesignJob = { id: jobId, workspaceId: workspace.id, frameId: selectedSpec.id, sourceRouteId, scopeKey, frameName: selectedSpec.name, route: selectedSpec.route, node: selectedNode, nodeLabel: selectedMeta.label, sourceFile: selectedSpec.sourceFile, gapId: gapId ?? undefined, before: selectedContent, prompt, intent: agentIntent, status: "thinking", reply: "", createdAt: now() };
     agentControllers.current.set(jobId, controller); mutateAgentJobs((items) => [job, ...items].slice(0, 30)); setActiveAgentJobId(jobId); setComposer(""); setAttachedGap(null);
@@ -508,8 +512,9 @@ export function AgentHarness() {
           await writeLiveSource(job.sourceFile, linkedSource);
         }
         const newSourceRouteId = `${crypto.randomUUID()}-route`;
+        const pageName = job.patch.pageName;
         const createdFrames: FrameSpec[] = existingTargets.length ? [] : sourceVariants.map((source, index) => ({
-          id: `${newSourceRouteId}--${source.profile ?? "desktop"}`, sourceRouteId: newSourceRouteId, profile: source.profile ?? "desktop", viewportWidth: source.viewportWidth, viewportHeight: source.viewportHeight, scroll: EMPTY_SCROLL, verification: "not_verified", route, name: `${job.patch.pageName}${sourceVariants.length > 1 ? ` · ${RESPONSIVE_PROFILES[source.profile ?? "desktop"].label}` : ""}`, state: "Agent draft", x: 80 + index * 490, y: 80 + Math.ceil(workspace.frames.length / Math.max(1, sourceVariants.length)) * 375, width: source.width, height: source.height, accent: source.accent, updatedAt: stamp, sourceFile: job.sourceFile ? nextRouteSourcePath(job.sourceFile, route) ?? undefined : undefined,
+          id: `${newSourceRouteId}--${source.profile ?? "desktop"}`, sourceRouteId: newSourceRouteId, profile: source.profile ?? "desktop", viewportWidth: source.viewportWidth, viewportHeight: source.viewportHeight, scroll: EMPTY_SCROLL, verification: "not_verified", route, name: `${pageName}${sourceVariants.length > 1 ? ` · ${RESPONSIVE_PROFILES[source.profile ?? "desktop"].label}` : ""}`, state: "Agent draft", x: 80 + index * 490, y: 80 + Math.ceil(workspace.frames.length / Math.max(1, sourceVariants.length)) * 375, width: source.width, height: source.height, accent: source.accent, updatedAt: stamp, sourceFile: job.sourceFile ? nextRouteSourcePath(job.sourceFile, route) ?? undefined : undefined,
         }));
         const template = cloneRouteDesign(normalizeRouteDesign(workspace.designs[job.frameId], job.frameName, "Route-specific design state."));
         template.content = { ...template.content, eyebrow: job.patch.eyebrow, headline: job.patch.headline, supporting: job.patch.supporting, primaryAction: job.patch.primaryAction };
@@ -558,7 +563,7 @@ export function AgentHarness() {
   const setupReady = repositoryReady && keyStatus.connected;
   const lockedReason = !repositoryReady ? "Import a GitHub repository to attach every prompt to real source." : !keyStatus.connected ? "Connect and validate an OpenAI API key to use design prompts." : undefined;
   const openRequiredSetup = () => { if (!repositoryReady) { setWorkspaceTab("github"); setWorkspaceModal(true); } else setKeyModal(true); };
-  return <main className={`harness-shell ${setupReady ? "setup-ready" : "setup-blocked"}`} style={{ gridTemplateColumns: `${leftOpen ? leftWidth : 54}px minmax(0, 1fr) ${rightOpen ? 304 : 0}px` }}>
+  return <main className={`harness-shell ${setupReady ? "setup-ready" : "setup-blocked"}`} style={{ gridTemplateColumns: `${leftOpen ? leftWidth : 54}px minmax(0, 1fr) ${rightOpen && setupReady ? 304 : 0}px` }}>
     <aside className={`left-sidebar ${leftOpen ? "open" : "closed"}`}><div className="brand-row"><HarnessMark compact={!leftOpen} />{leftOpen && <div><strong>Design Harness</strong><span>Code-native design</span></div>}<button onClick={() => setLeftOpen(!leftOpen)}>{leftOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}</button></div>{leftOpen && <>
       <button className="new-workspace" onClick={() => setWorkspaceModal(true)}><Plus size={14} /> New workspace</button>
       <label className="workspace-picker"><span>WORKSPACE</span><select value={activeWorkspaceId} onChange={(event) => { const next = workspaces.find((item) => item.id === event.target.value)!; void import("../lib/live-preview-client").then(({ stopLiveRepositoryPreview }) => stopLiveRepositoryPreview()); setLivePreview({ workspaceId: next.id, status: "idle", message: "Live repository preview is not running.", url: null }); setActiveWorkspaceId(next.id); setSelectedFrame(next.frames[0].id); setSelected(`${next.frames[0].id}:headline`); setActiveAgentJobId(null); setAttachedGap(null); setComposer(""); setSourceDraft(""); setSourceOriginal(""); setSourcePath(""); setPan({ x: 60, y: 18 }); }}><option disabled value="">Choose workspace</option>{workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
@@ -573,13 +578,24 @@ export function AgentHarness() {
       <div className="workspace-status"><span><i />{activeLiveUrl ? `${liveFrameIds.length} live · ${Math.max(0, workspace.frames.length - liveFrameIds.length)} static` : "Static thumbnails · runtime stopped"}</span><small>{workspace.frames.length} responsive frame(s) · max 3 live</small></div>
     </>} {leftOpen && <div className="sidebar-resizer" onPointerDown={resizeSidebar} />}</aside>
 
-    <section className="workspace"><header className="topbar"><div className="mode-group"><button className={mode === "edit" ? "active" : ""} onClick={() => setMode("edit")}><MousePointer2 size={14} />Edit page</button><button className={mode === "prototype" ? "active" : ""} onClick={() => setMode("prototype")}><Link2 size={14} />Preview flow</button><button className={mode === "graph" ? "active" : ""} onClick={() => setMode("graph")}><GitBranch size={14} />Graph</button></div><div className="session-title"><span>{workspace.name}</span><small>Draft · base {workspace.baseSha}</small></div><div className="toolbar-actions"><button className={`key-status ${keyStatus.connected ? "connected" : "missing"}`} onClick={() => setKeyModal(true)}><Bot size={14} /><span>{keyStatus.connected ? keyStatus.masked : "Set up AI"}</span></button><button><Undo2 size={15} /></button><button><Redo2 size={15} /></button><button onClick={() => openPageModal("duplicate")}><Copy size={14} /><span>Duplicate page</span></button><button><Grid2X2 size={14} /><span>Multi-select</span></button><button className={`publish-button validation-${validationStatus}`} onClick={() => setVerificationModal(true)}><ShieldCheck size={14} />{validationStatus === "passed" ? "Pixel verified" : "Verify production"}<span>{activeTransactions.length + activeGaps.length}</span></button></div></header>
-      {!setupReady && <section className="setup-gate" role="status"><div className="setup-gate-kicker"><ShieldCheck size={15} />SETUP REQUIRED</div><h2>Connect real source before designing</h2><p>Design edits and prompts stay locked until this workspace has an imported GitHub repository and a validated OpenAI API key.</p><div className="setup-checks"><article className={repositoryReady ? "complete" : "pending"}><span>{repositoryReady ? <Check size={14} /> : "1"}</span><div><strong>GitHub repository</strong><small>{repositoryReady ? workspace.repository : githubStatus.connected ? "GitHub App ready—import a repository" : githubStatus.configured ? "Install the App on selected repositories" : "Create your private Design Harness GitHub App"}</small></div>{!repositoryReady && (githubStatus.connected ? <button onClick={() => { setWorkspaceTab("github"); setWorkspaceModal(true); }}>Import repo</button> : <a href={githubStatus.configured ? "/api/github/install" : "/api/github/manifest"}>{githubStatus.configured ? "Install App" : "Set up App"}</a>)}</article><article className={keyStatus.connected ? "complete" : "pending"}><span>{keyStatus.connected ? <Check size={14} /> : "2"}</span><div><strong>OpenAI API key</strong><small>{keyStatus.connected ? `${keyStatus.masked} validated` : "Required for design planning and source proposals"}</small></div>{!keyStatus.connected && <button onClick={() => setKeyModal(true)}>Set up AI</button>}</article></div><small className="setup-gate-note">No personal GitHub token is requested. Repository writes remain reviewable and require approval.</small></section>}
+    <section className="workspace"><header className="topbar"><div className="mode-group">
+      <IconControl label="Edit" explanation="Select an element to inspect its design and source." active={mode === "edit"} onClick={() => setMode("edit")}><MousePointer2 size={19} /></IconControl>
+      <IconControl label="Prototype" explanation="Follow a button or link to its destination frame." active={mode === "prototype"} onClick={() => setMode("prototype")}><Link2 size={19} /></IconControl>
+      <IconControl label="Flow map" explanation="See the connections between routes and states." active={mode === "graph"} onClick={() => setMode("graph")}><GitBranch size={19} /></IconControl>
+    </div><div className="session-title"><span>{workspace.name}</span><small>Draft · base {workspace.baseSha}</small></div><div className="toolbar-actions">
+      <IconControl label="AI connection" explanation={keyStatus.connected ? "Your key is connected. Manage your AI settings." : "Connect your own OpenAI key."} onClick={() => setKeyModal(true)}><Bot size={19} /></IconControl>
+      <IconControl label="Undo" explanation="Source undo is not available yet." disabled><Undo2 size={19} /></IconControl>
+      <IconControl label="Redo" explanation="Source redo is not available yet." disabled><Redo2 size={19} /></IconControl>
+      <IconControl label="Duplicate page" explanation="Choose a name and route for a copy of this frame." onClick={() => openPageModal("duplicate")}><Copy size={18} /></IconControl>
+      <IconControl label="Multi-select" explanation="Multiple-element selection is not available yet." disabled><Grid2X2 size={18} /></IconControl>
+      <IconControl label="Verify production" explanation={validationStatus === "passed" ? "Review the recorded production checks." : "Not production verified. Review GitHub Actions checks and limitations."} onClick={() => setVerificationModal(true)}><ShieldCheck size={19} /></IconControl>
+    </div></header>
+      {!setupReady && <WorkspaceSetup repositoryReady={repositoryReady} repositoryName={workspace.repository} githubConnected={githubStatus.connected} githubConfigured={githubStatus.configured} aiConnected={keyStatus.connected} loading={githubStatus.loading || keyStatus.loading} onImport={() => { setWorkspaceTab("github"); setWorkspaceModal(true); }} onKey={() => setKeyModal(true)} />}
       <div ref={canvasRef} className={`canvas-viewport mode-${mode} ${draggingCanvas ? "dragging" : ""}`} onPointerDown={startCanvasDrag} onPointerMove={moveCanvas} onPointerUp={() => setDraggingCanvas(false)}><div className="mode-explainer">{modeIcon}<div><strong>{modeCopy.title}</strong><span>{modeCopy.body}</span></div></div><div className="canvas-grid" style={{ transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`, width: 1600, height: Math.max(820, Math.ceil(workspace.frames.length / 3) * 375 + 80) }}>
         {mode === "graph" && <svg className="graph-lines" width="1600" height="1200"><defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M 0 0 L 10 5 L 0 10 z" /></marker></defs>{Object.entries(workspace.connections ?? {}).flatMap(([sourceId, connections]) => Object.entries(connections).map(([node, targetId]) => { const source = workspace.frames.find((frame) => frame.id === sourceId); const target = workspace.frames.find((frame) => frame.id === targetId); return !source || !target ? null : <path key={`${source.id}-${node}-${target.id}`} d={`M ${source.x + source.width} ${source.y + 190} C ${source.x + source.width + 55} ${source.y + 190}, ${target.x - 55} ${target.y + 190}, ${target.x} ${target.y + 190}`} markerEnd="url(#arrow)" />; }))}</svg>}
         {workspace.frames.map((frame) => { const design = normalizeRouteDesign(workspace.designs[frame.id], frame.name, "Route-specific design state."); const targets = targetsForFrame(frame.id); const gapCount = activeGaps.filter((gap) => gap.frameId === frame.id).length; const representation: PreviewRepresentation = workspace.repositoryUrl ? activeLiveUrl && liveFrameIds.includes(frame.id) ? "live" : "thumbnail" : "live"; return <FramePreview key={frame.id} frame={frame} design={design} mode={mode} active={selectedFrame === frame.id} selectedNode={selectedNode} targets={targets} gapCount={gapCount} representation={representation} liveBaseUrl={activeLiveUrl} onFocus={() => { setSelectedFrame(frame.id); if (activeLiveUrl) setFocusFrameId(frame.id); else setZoom(.82); }} onPin={() => togglePinnedFrame(frame.id)} onSelect={(node) => selectFrame(frame.id, node)} onNavigate={(targetId) => centerFrame(targetId, true)} onMissing={(node) => logMissingInteraction(frame.id, node)} onInlineText={(node, text) => { const previous = design.content[node]; if (text !== previous) { selectFrame(frame.id, node); updateNodeContent(frame.id, node, text, previous); } }} />; })}
       </div><div className="zoom-control"><button onClick={() => setZoom((value) => Math.max(.4, value - .1))}><ZoomOut size={14} /></button><button className="zoom-value" onClick={() => setZoom(.82)}>{Math.round(zoom * 100)}%</button><button onClick={() => setZoom((value) => Math.min(1.4, value + .1))}><ZoomIn size={14} /></button><i /><button onClick={() => { setZoom(.82); setPan({ x: 60, y: 18 }); }}><Maximize2 size={14} /></button></div></div>
-      <DesignAgentDock jobs={agentJobs.filter((job) => job.workspaceId === workspace.id)} activeJobId={activeAgentJobId} composer={composer} composerRef={composerRef} intent={agentIntent} frameName={selectedSpec.name} route={selectedSpec.route} nodeLabel={selectedMeta.label} sourceFile={selectedSpec.sourceFile} keyLabel={keyStatus.connected ? keyStatus.masked ?? "connected" : "key required"} attachedGap={attachedGap} lockedReason={lockedReason} onSetup={openRequiredSetup} onSelectJob={setActiveAgentJobId} onComposer={setComposer} onIntent={setAgentIntent} onSend={() => void sendAgent()} onStop={stopAgentJob} onApply={(id) => void applyAgentJob(id)} onFocusFrame={centerFrame} onClearGap={() => setAttachedGap(null)} />
+      {setupReady && <DesignAgentDock jobs={agentJobs.filter((job) => job.workspaceId === workspace.id)} activeJobId={activeAgentJobId} composer={composer} composerRef={composerRef} intent={agentIntent} frameName={selectedSpec.name} route={selectedSpec.route} nodeLabel={selectedMeta.label} sourceFile={selectedSpec.sourceFile} keyLabel={keyStatus.connected ? keyStatus.masked ?? "connected" : "key required"} attachedGap={attachedGap} lockedReason={lockedReason} onSetup={openRequiredSetup} onSelectJob={setActiveAgentJobId} onComposer={setComposer} onIntent={setAgentIntent} onSend={() => void sendAgent()} onStop={stopAgentJob} onApply={(id) => void applyAgentJob(id)} onFocusFrame={centerFrame} onClearGap={() => setAttachedGap(null)} />}
     </section>
 
     <aside className={`right-inspector ${rightOpen ? "open" : "closed"}`}>{rightOpen ? <><div className="inspector-head"><div><strong>{selectedSpec.name} inspector</strong><span>{selected} · updated {timeLabel(selectedSpec.updatedAt)}</span></div><button onClick={() => setRightOpen(false)}><PanelRightClose size={16} /></button></div><div className="inspector-tabs">{(["design", "layers", "code", "changes"] as InspectorTab[]).map((tab) => <button key={tab} className={inspectorTab === tab ? "active" : ""} onClick={() => setInspectorTab(tab)}>{tab}</button>)}</div>
@@ -603,14 +619,14 @@ export function AgentHarness() {
     {keyModal && <div className="modal-backdrop key-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setKeyModal(false)}><section className="workspace-modal api-key-modal"><header><div><span>PERSONAL AI CONNECTION</span><h2>{keyStatus.connected ? "Your API key is connected" : "Connect your OpenAI API key"}</h2><p>A validated personal key unlocks design editing, chat, flow planning, and document improvements after a repository is imported.</p></div><button onClick={() => setKeyModal(false)}>×</button></header><div className="modal-body">{keyStatus.connected ? <><div className="key-success"><Check size={18} /><div><strong>{keyStatus.masked}</strong><span>Validated {keyStatus.validatedAt ? `${dateLabel(keyStatus.validatedAt)} · ${timeLabel(keyStatus.validatedAt)}` : "recently"}</span><small>{keyStatus.models.join(" · ")}</small></div></div><div className="security-note"><Bot size={16} /><p>The full key is encrypted in an HttpOnly cookie and is never stored in project memory, browser storage, D1, R2, logs, or source control.</p></div></> : <><label className="key-field"><span>OpenAI API key</span><input type="password" autoComplete="off" spellCheck={false} value={apiKey} onChange={(event) => setApiKey(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter") void validateApiKey(); }} placeholder="Paste your temporary or personal key" /></label><div className="security-note"><Bot size={16} /><p>The key is sent directly to this Site, validated against the required models, encrypted for this signed-in user, and never returned to JavaScript after setup.</p></div>{keyError && <p className="import-error">{keyError}</p>}</>}</div><footer>{keyStatus.connected ? <><button className="danger" onClick={() => void forgetApiKey()}>Forget key</button><button className="primary" onClick={() => setKeyModal(false)}>Done</button></> : <><button className="cancel" onClick={() => setKeyModal(false)}>Not now</button><button className="primary" disabled={!apiKey.trim() || keyValidating} onClick={() => void validateApiKey()}>{keyValidating ? "Validating access…" : "Validate & connect"}</button></>}</footer></section></div>}
 
     {workspaceModal && <div className="modal-backdrop" onMouseDown={(event) => event.target === event.currentTarget && setWorkspaceModal(false)}>
-      <section className="workspace-modal"><header><div><span>DESIGN HARNESS</span><h2>Start a workspace</h2><p>Every workspace owns its routes, states, brand tokens, and edit history.</p></div><button onClick={() => setWorkspaceModal(false)}>×</button></header>
+      <section className="workspace-modal"><header><div><h2>New workspace</h2></div><button aria-label="Close new workspace" onClick={() => setWorkspaceModal(false)}>×</button></header>
         <div className="modal-tabs"><button className={workspaceTab === "create" ? "active" : ""} onClick={() => setWorkspaceTab("create")}><Plus size={14} />Blank workspace</button><button className={workspaceTab === "github" ? "active" : ""} onClick={() => setWorkspaceTab("github")}><GitBranch size={14} />Import GitHub repo</button></div>
         <div className="modal-body"><label><span>Workspace name</span><input value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder={workspaceTab === "create" ? "New website exploration" : "Defaults to repository name"} /></label>
           {workspaceTab === "create" ? <div className="blank-workspace-preview"><Grid2X2 size={22} /><div><strong>One independent home route</strong><span>Start with the default brand palette, then edit or add colors.</span></div></div> : <>
             <label><span>GitHub repository URL</span><input value={repositoryUrl} onChange={(event) => setRepositoryUrl(event.target.value)} placeholder="https://github.com/owner/repository" /></label>
-            <div className={`import-github-access ${githubStatus.connected ? "connected" : ""}`}><GitBranch size={18} /><div><strong>{githubStatus.connected ? "Repository-scoped GitHub App connected" : githubStatus.configured ? "Install your GitHub App" : "Create your Design Harness GitHub App"}</strong><span>{githubStatus.connected ? "Imports use a read-only token. An approved PR later receives Contents + Pull Requests write access for one selected repository." : githubStatus.configured ? "Choose only the repositories Design Harness may access. No personal token is pasted into this site." : "GitHub creates a private App that you own. Its encrypted credential stays in an HttpOnly session cookie and is never exposed to browser JavaScript."}</span></div>{!githubStatus.connected && <a href={githubStatus.configured ? "/api/github/install" : "/api/github/manifest"}>{githubStatus.configured ? "Install GitHub App" : "Set up GitHub App"}</a>}</div>
-            <div className="import-details"><Monitor size={18} /><div><strong>Frontend source only</strong><span>Discover and render React, Vite, Next, and React Router screens. Design Harness does not provision databases, authentication servers, APIs, or other backend services; use fixtures for dependent states.</span></div></div>
-            <label className="trust-check"><input type="checkbox" checked={trusted} onChange={(event) => setTrusted(event.target.checked)} /><span>I trust this repository. Dependency scripts may run only after import and a separate confirmation.</span></label>{importError && <p className="import-error">{importError}</p>}
+            <div className={`import-github-access ${githubStatus.connected ? "connected" : ""}`}><GitBranch size={20} /><div><strong>{githubStatus.connected ? "GitHub connected" : "Connect GitHub first"}</strong><span>Selected repositories only · no personal token</span></div>{!githubStatus.connected && <a href={githubStatus.configured ? "/api/github/install" : "/api/github/manifest"}>Connect</a>}</div>
+            <details className="import-scope-details"><summary><Monitor size={16} />Web apps only</summary><p>React, Vite, Next.js, and React Router. Backends, databases, and sign-in services are not provisioned; use fixtures for those screens.</p><p>Import reads source without running it. Starting a preview requires separate approval to install dependencies and run repository scripts.</p></details>
+            <label className="trust-check"><input type="checkbox" checked={trusted} onChange={(event) => setTrusted(event.target.checked)} /><span>I trust this repository. Ask before running scripts.</span></label>{importError && <p className="import-error" role="alert">{importError}</p>}
           </>}
         </div><footer><button className="cancel" onClick={() => setWorkspaceModal(false)}>Cancel</button>{workspaceTab === "create" ? <button className="primary" onClick={createWorkspace}>Create workspace</button> : <button className="primary" disabled={!githubStatus.connected || !repositoryUrl || importing} onClick={() => void importWorkspace()}>{importing ? "Reading routes and brand guide…" : githubStatus.connected ? "Import workspace" : "Connect GitHub App first"}</button>}</footer>
       </section>

@@ -7,13 +7,15 @@ export type BrandTokens = {
 
 export function parseGitHubRepositoryUrl(value: string) {
   const url = new URL(value.trim());
-  if (url.protocol !== "https:" || url.hostname !== "github.com") throw new Error("Use a full https://github.com/owner/repository URL.");
+  if (url.protocol !== "https:" || url.hostname !== "github.com" || url.port || url.username || url.password || url.search || url.hash) throw new Error("Use a plain https://github.com/owner/repository URL without credentials or extra parameters.");
   const parts = url.pathname.replace(/^\/+|\/+$/g, "").split("/");
-  if (parts.length < 2 || !parts[0] || !parts[1]) throw new Error("The GitHub URL must include an owner and repository.");
-  return { owner: parts[0], repository: parts[1].replace(/\.git$/, "") };
+  const repository = parts[1]?.replace(/\.git$/, "");
+  if (parts.length !== 2 || !/^[A-Za-z0-9][A-Za-z0-9-]{0,99}$/.test(parts[0]) || !repository || !/^[A-Za-z0-9._-]{1,100}$/.test(repository) || repository === "." || repository === "..") throw new Error("Use the repository root URL, not a branch, file, or settings page.");
+  return { owner: parts[0], repository };
 }
 
 export function isBrandSource(path: string) {
+  if (/(?:^|\/)(?:brand|design)\.md$/i.test(path)) return true;
   return /(?:brand|token|theme|variable|global|tailwind|design-system|style)/i.test(path) && /\.(?:css|scss|sass|less|ts|tsx|js|jsx|json|md)$/i.test(path);
 }
 

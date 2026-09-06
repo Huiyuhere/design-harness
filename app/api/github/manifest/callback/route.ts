@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { clearGitHubCookie, GITHUB_STATE_COOKIE, githubAppCookie, verifyGitHubState } from "../../../../../lib/github-app";
 import { jsonError, requestUser } from "../../../../../lib/request-security";
+import { githubReturnPage } from "../../../../../lib/github-return-page";
 
 export const dynamic = "force-dynamic";
 
@@ -18,8 +19,8 @@ export async function GET(request: NextRequest) {
   if (!response.ok || !payload?.id || !payload.slug || !payload.pem) return jsonError(payload?.message ?? "GitHub could not create the App.", response.status || 502);
   if (!/^[a-z0-9-]{1,100}$/.test(payload.slug) || payload.pem.length > 10_000 || !payload.pem.includes("PRIVATE KEY")) return jsonError("GitHub returned an invalid App configuration.", 502);
   const appCookie = await githubAppCookie({ appId: String(payload.id), slug: payload.slug, privateKey: payload.pem, createdAt: new Date().toISOString() }, user);
-  const headers = new Headers({ Location: new URL("/api/github/install", request.nextUrl.origin).toString(), "Cache-Control": "no-store" });
+  const headers = new Headers();
   headers.append("Set-Cookie", appCookie);
   headers.append("Set-Cookie", clearGitHubCookie(GITHUB_STATE_COOKIE));
-  return new Response(null, { status: 302, headers });
+  return githubReturnPage({ title: "Your GitHub App is ready", description: "Next, install it on only the repositories you want to use in Design Harness. No repository code is changed by connecting.", label: "Choose repositories on GitHub", action: "/api/github/install", headers });
 }

@@ -5,6 +5,9 @@ import { extractBrandTokens, parseGitHubRepositoryUrl } from "../lib/brand-extra
 test("parses and restricts GitHub repository URLs", () => {
   assert.deepEqual(parseGitHubRepositoryUrl("https://github.com/Huiyuhere/design-canvas"), { owner: "Huiyuhere", repository: "design-canvas" });
   assert.throws(() => parseGitHubRepositoryUrl("https://example.com/owner/repo"));
+  assert.throws(() => parseGitHubRepositoryUrl("https://credential@github.com/owner/repo"));
+  assert.throws(() => parseGitHubRepositoryUrl("https://github.com/owner/repo/tree/main"));
+  assert.throws(() => parseGitHubRepositoryUrl("https://github.com/owner/repo?token=example"));
 });
 
 test("discovers brand colors and typography with provenance", () => {
