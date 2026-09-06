@@ -17,11 +17,11 @@ inspector or a successful runtime start as evidence of source synchronization.
 | Scroll | Window and stable named nested-container offsets saved through a sender-window/origin-checked bridge. Scroll saves do not change the iframe URL. Tested with actual cross-origin browser iframes |
 | Inactive cards | Explicit placeholders until actual thumbnails exist. Imported cards no longer display fabricated page layouts |
 | DOM and visual edits | Real imported DOM-to-JSX/CSS anchoring is not integrated. Legacy Design/Layers values describe the demo projection, not trustworthy imported source |
-| Source editor | Can read/write a route file in the running tree, with syntax checks. Atomic multi-file rollback, complete hash conflict protection, HMR/style proof and durable reconstruction remain incomplete |
+| Source editor | Workspace-bound reads and serialized writes with exact expected-content checks. Source deltas are saved before writes; failed file batches restore previous contents. Runtime-failure/HMR/style validation and full transactional approval remain incomplete |
 | Patch adapters | JSX, CSS and Tailwind transformation primitives have unit tests; these are not proof of the whole inspector/agent path |
 | Agent | Personal-key streaming and approved proposals exist; selected-element execution, durable jobs and cross-workspace application need end-to-end validation |
 | Concurrency | Scheduling primitives are unit-tested. Comprehensive repository-wide write serialization is not yet integrated across every mutation path |
-| Persistence | Local workspace state and some D1 context records exist. Schema/R2 bindings alone do not prove encrypted patch persistence |
+| Persistence | Approved source deltas use browser-local IndexedDB, keyed by workspace, repository and full base SHA, and replay after restart with conflict checks. They are not a server backup. Schema/R2 bindings alone do not prove encrypted patch persistence |
 | Production | No production pixel-verification claim. Exact-SHA baseline ingestion, managed push/PR and production publishing remain incomplete |
 
 ### Legacy/demo functionality
@@ -65,6 +65,9 @@ must be assessed against the table above:
 - WebContainer isolation checks and a single-instance runtime boundary;
 - a bounded GitHub App-authenticated archive runtime that mounts one source tree,
   installs only after an explicit trust prompt, and runs one dev server;
+- cancellable downloads/installations, bounded startup waits, clean process/listener
+  teardown, and serialized workspace switching; late requests cannot mount a
+  different workspace or change its source;
 - linked desktop (1440×900), tablet (768×1024), and mobile (390×844)
   variants that share route source while retaining independent viewport state;
 - a live-frame scheduler: zero canvas iframes below 65% zoom, normally one
@@ -83,8 +86,12 @@ thumbnails, screenshot-baseline pixel diffing, HMR geometry/computed-style
 proof, encrypted R2 bundle persistence, and explicit push/PR remain integration
 milestones. Archive imports require a GitHub App connection; dependency execution
 requires separate explicit trust. Direct
-source edits affect the in-browser runtime only until a future draft commit and
-explicit push flow is connected. The product never awards a pixel-verified
+source edits remain in the in-browser runtime and a local source-delta journal
+until a future draft commit and explicit push flow is connected. Clearing Site
+data or using another browser loses access to that local journal; it is not D1/R2
+backup. Deltas are capped at 10 MiB per workspace/revision and storage failure
+blocks the write. Unapplied editor text is not part of the approved journal.
+The product never awards a pixel-verified
 badge from the canvas or from static representations.
 
 ## Safety model
@@ -97,7 +104,9 @@ badge from the canvas or from static representations.
   Contents read/write, Pull Requests read/write, and no Workflows permission.
 - Agent changes are proposals until the user approves a diff.
 - The intended policy is repository-serialized writes and bounded analysis.
-  The scheduler library is not yet connected to every mutation path.
+  The live source editor and agent file batches now share a serialized runtime
+  queue. The separate scheduler library is not connected to every other
+  metadata mutation path.
 - Published source must never contain preview instrumentation attributes.
 - Branch push and pull-request creation are separate explicit actions.
 
@@ -112,6 +121,33 @@ pnpm dev
 
 Then open `http://localhost:3000` in desktop Chromium. The response includes
 the COOP/COEP headers required by WebContainer.
+
+### Browser runtime compatibility
+
+Next.js 16's default Turbopack requires native bindings. For an uncustomized
+`next dev` script, the browser runner passes `--webpack` and shows that choice
+in startup status; it does not edit `package.json`. Custom dev commands are not
+silently rewritten. See the [Next.js CLI documentation](https://nextjs.org/docs/app/api-reference/cli/next).
+This is a development-runtime adapter, not evidence of production screenshot
+parity. Native modules and application-specific services can still fail and
+require visible diagnostics or user-approved fixtures.
+
+A real browser-runner audit reached a Next.js 16.2.10 request-context invariant
+(`Expected workStore to be initialized`) after successful installation and server
+startup. That application did **not** render. Webpack is not a universal Next.js
+compatibility fix. A [related upstream report](https://github.com/stackblitz/webcontainer-core/issues/1978)
+describes a similar storage invariant with Next.js 15.5; it does not establish
+the cause or a fix for the audited 16.2 case. No framework downgrade or replacement
+is performed automatically.
+
+The importer transfers raw file buffers using `fs.writeFile`, bypassing the
+API 1.6.1 tree serializer's Windows-1252 byte conversion. Exact UTF-8 source
+transfer was verified through the real runtime; binary roundtrip regression
+tests cover all 256 byte values. This check is distinct from page rendering.
+
+Classic Yarn uses `--frozen-lockfile`; modern Yarn uses `--immutable`. Repositories
+without a lockfile are explicitly labeled as such instead of claiming a locked
+installation. The original repository is not modified to manufacture a lockfile.
 
 Validation:
 

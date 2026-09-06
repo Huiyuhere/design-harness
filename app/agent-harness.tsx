@@ -196,6 +196,8 @@ export function AgentHarness() {
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const [workspaces, setWorkspaces] = useState<WorkspaceSpec[]>([firstWorkspace]);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(firstWorkspace.id);
+  const previewRequest = useRef(0); const sourceRequest = useRef(0); const activeWorkspaceRef = useRef(firstWorkspace.id);
+  useEffect(() => { activeWorkspaceRef.current = activeWorkspaceId; }, [activeWorkspaceId]);
   const [storageReady, setStorageReady] = useState(false);
   const [leftOpen, setLeftOpen] = useState(true); const [rightOpen, setRightOpen] = useState(true); const [leftWidth, setLeftWidth] = useState(278);
   const [mode, setMode] = useState<CanvasMode>("edit"); const [inspectorTab, setInspectorTab] = useState<InspectorTab>("design");
@@ -249,7 +251,7 @@ export function AgentHarness() {
     }).catch(() => { if (active) setGitHubStatus({ loading: false, configured: false, connected: false }); });
     return () => { active = false; };
   }, []);
-  useEffect(() => () => { void import("../lib/live-preview-client").then(({ stopLiveRepositoryPreview }) => stopLiveRepositoryPreview()); }, []);
+  useEffect(() => () => { previewRequest.current++; sourceRequest.current++; void import("../lib/live-preview-client").then(({ stopLiveRepositoryPreview }) => stopLiveRepositoryPreview()).catch(() => undefined); }, []);
   useEffect(() => {
     if (storageReady) localStorage.setItem("agent-harness-workspaces-v1", JSON.stringify({ workspaces, transactions }));
   }, [storageReady, transactions, workspaces]);
@@ -267,7 +269,7 @@ export function AgentHarness() {
   const commit = (property: string, before: string, after: string, target = selectedSpec) => {
     if (before === after) return;
     const stamp = now();
-    setTransactions((items) => [{ id: crypto.randomUUID(), workspaceId: workspace.id, frameId: target.id, timestamp: timeLabel(stamp), date: dateLabel(stamp), target: `${workspace.name} / ${target.name}`, property, before, after, status: "validated" }, ...items]);
+    setTransactions((items) => [{ id: crypto.randomUUID(), workspaceId: workspace.id, frameId: target.id, timestamp: timeLabel(stamp), date: dateLabel(stamp), target: `${workspace.name} / ${target.name}`, property, before, after, status: "pending" }, ...items]);
     setToast(`${target.name} updated · ${timeLabel(stamp)}`); window.setTimeout(() => setToast(null), 1800);
   };
   const updateRouteDesign = (frameId: string, updater: (design: RouteDesignData) => RouteDesignData, property?: string, before?: string, after?: string) => {
@@ -287,7 +289,7 @@ export function AgentHarness() {
   const updateNodeStyle = (patch: Partial<typeof selectedStyle>, property?: string, before?: string, after?: string) => updateRouteDesign(selectedSpec.id, (design) => ({ ...design, styles: { ...design.styles, [selectedNode]: { ...design.styles[selectedNode], ...patch } } }), property ? `${selectedNode}.${property}` : undefined, before, after);
   const updateVertical = (vertical: RouteDesignData["vertical"], before: string) => updateRouteDesign(selectedSpec.id, (design) => ({ ...design, vertical }), "route.vertical-align", before, vertical);
   const targetsForFrame = (frameId: string) => Object.fromEntries(Object.entries(workspace.connections?.[frameId] ?? {}).map(([node, targetId]) => [node, workspace.frames.find((frame) => frame.id === targetId)]).filter((entry) => Boolean(entry[1]))) as Partial<Record<TextNodeKey, FrameSpec>>;
-  const selectFrame = (id: string, node: TextNodeKey = "headline") => { setSelectedFrame(id); setSelected(`${id}:${node}`); };
+  const selectFrame = (id: string, node: TextNodeKey = "headline") => { sourceRequest.current++; setSourceBusy(false); setSelectedFrame(id); setSelected(`${id}:${node}`); };
   const centerFrame = useCallback((frameId: string, fromPrototype = false) => {
     const current = workspaces.find((item) => item.id === activeWorkspaceId) ?? workspaces[0]; const frame = current.frames.find((item) => item.id === frameId);
     if (!frame || !canvasRef.current) return; const rect = canvasRef.current.getBoundingClientRect(); const prior = current.frames.find((item) => item.id === selectedFrame);
@@ -302,29 +304,49 @@ export function AgentHarness() {
   const startRepositoryPreview = async () => {
     if (!workspace.repositoryUrl || !workspace.baseRef) { setLivePreview({ workspaceId: workspace.id, status: "error", message: "This workspace has no downloadable GitHub archive reference.", url: null }); return; }
     if (!window.confirm("Run this repository’s dependency installation and development scripts inside the isolated browser runtime? Only continue for code you trust.")) return;
+    const request = ++previewRequest.current;
+    const isCurrent = () => request === previewRequest.current && activeWorkspaceRef.current === workspace.id;
     setLivePreview({ workspaceId: workspace.id, status: "downloading", message: "Preparing the repository…", url: null });
     try {
       const { startLiveRepositoryPreview } = await import("../lib/live-preview-client");
-      const url = await startLiveRepositoryPreview({ workspaceId: workspace.id, repositoryUrl: workspace.repositoryUrl, ref: workspace.baseRef, onEvent: (event) => setLivePreview({ workspaceId: workspace.id, status: event.status, message: event.message, url: event.url ?? null }) });
-      setLivePreview({ workspaceId: workspace.id, status: "ready", message: "Real repository preview ready.", url });
-    } catch (error) { setLivePreview({ workspaceId: workspace.id, status: "error", message: (error as Error).message, url: null }); }
+      if (!isCurrent()) return;
+      await startLiveRepositoryPreview({ workspaceId: workspace.id, repositoryUrl: workspace.repositoryUrl, ref: workspace.baseRef, trusted: true, onEvent: (event) => { if (isCurrent()) setLivePreview({ workspaceId: workspace.id, status: event.status, message: event.message, url: event.url ?? null }); } });
+    } catch (error) { if (isCurrent()) setLivePreview({ workspaceId: workspace.id, status: "error", message: (error as Error).message, url: null }); }
+  };
+  const stopRepositoryPreview = async () => {
+    previewRequest.current++; sourceRequest.current++;
+    setLivePreview({ workspaceId: workspace.id, status: 'idle', message: 'Preview stopped · approved source edits saved locally', url: null }); setFocusFrameId(null); setSourceBusy(false);
+    try { const { stopLiveRepositoryPreview } = await import('../lib/live-preview-client'); await stopLiveRepositoryPreview(); }
+    catch (error) { if (activeWorkspaceRef.current === workspace.id) setLivePreview({ workspaceId: workspace.id, status: 'error', message: (error as Error).message, url: null }); }
+  };
+  const switchWorkspace = (id: string) => {
+    const next = workspaces.find(item => item.id === id); if (!next) return;
+    if (sourceDraft !== sourceOriginal && !window.confirm('Discard unapplied editor text? Approved source edits remain saved on this device.')) return;
+    previewRequest.current++; sourceRequest.current++; activeWorkspaceRef.current = next.id;
+    void import('../lib/live-preview-client').then(({ stopLiveRepositoryPreview }) => stopLiveRepositoryPreview()).catch(error => setToast((error as Error).message));
+    setLivePreview({ workspaceId: next.id, status: 'idle', message: 'Live repository preview is not running.', url: null });
+    setFocusFrameId(null); setActiveWorkspaceId(next.id); setSelectedFrame(next.frames[0].id); setSelected(`${next.frames[0].id}:headline`);
+    setActiveAgentJobId(null); setAttachedGap(null); setComposer(''); setSourceDraft(''); setSourceOriginal(''); setSourcePath(''); setSourceError(null); setSourceBusy(false); setPan({ x: 60, y: 18 });
   };
   const loadSourceFile = async () => {
     if (!selectedSpec.sourceFile || livePreview.workspaceId !== workspace.id || livePreview.status !== "ready") { setSourceError("Start the live repository preview and select a route with a mapped JSX/TSX file first."); return; }
+    if (sourceDraft !== sourceOriginal && !window.confirm('Replace unapplied editor text with the selected source file?')) return;
     setSourceBusy(true); setSourceError(null);
-    try { const { readLiveSource } = await import("../lib/live-preview-client"); const source = await readLiveSource(selectedSpec.sourceFile); setSourcePath(selectedSpec.sourceFile); setSourceOriginal(source); setSourceDraft(source); }
-    catch (error) { setSourceError((error as Error).message); } finally { setSourceBusy(false); }
+    const request = ++sourceRequest.current;
+    try { const { readLiveSource } = await import("../lib/live-preview-client"); const source = await readLiveSource(workspace.id, selectedSpec.sourceFile); if (request === sourceRequest.current && activeWorkspaceRef.current === workspace.id) { setSourcePath(selectedSpec.sourceFile); setSourceOriginal(source); setSourceDraft(source); } }
+    catch (error) { if (request === sourceRequest.current) setSourceError((error as Error).message); } finally { if (request === sourceRequest.current) setSourceBusy(false); }
   };
   const applySourceFile = async () => {
     if (!sourcePath || sourceDraft === sourceOriginal) return;
+    const request = ++sourceRequest.current;
     setSourceBusy(true); setSourceError(null);
     try {
       if (/\.(?:t|j)sx?$/.test(sourcePath)) parse(sourceDraft, { sourceType: "module", plugins: ["jsx", "typescript"] });
-      const { writeLiveSource } = await import("../lib/live-preview-client"); await writeLiveSource(sourcePath, sourceDraft);
-      const before = sourceOriginal; setSourceOriginal(sourceDraft); commit(`${sourcePath} · direct source edit`, before, sourceDraft);
-      setWorkspaces((items) => items.map((item) => item.id !== workspace.id ? item : { ...item, updatedAt: now(), frames: item.frames.map((frame) => frameRouteIdentity(frame) === frameRouteIdentity(selectedSpec) ? { ...frame, updatedAt: now(), verification: "not_verified" as const } : frame) }));
-      setToast(`${sourcePath} updated · HMR requested`); window.setTimeout(() => setToast(null), 2200);
-    } catch (error) { setSourceError((error as Error).message); } finally { setSourceBusy(false); }
+      const { writeLiveSource } = await import("../lib/live-preview-client"); await writeLiveSource(workspace.id, sourcePath, sourceDraft, sourceOriginal);
+      const before = sourceOriginal; if (request === sourceRequest.current && activeWorkspaceRef.current === workspace.id) setSourceOriginal(sourceDraft); commit(`${sourcePath} · direct source edit`, before, sourceDraft, workspace.frames.find(frame => frame.sourceFile === sourcePath) ?? selectedSpec);
+      setWorkspaces((items) => items.map((item) => item.id !== workspace.id ? item : { ...item, updatedAt: now(), frames: item.frames.map((frame) => frame.sourceFile === sourcePath ? { ...frame, updatedAt: now(), verification: "not_verified" as const } : frame) }));
+      if (activeWorkspaceRef.current === workspace.id) { setToast(`${sourcePath} updated · HMR requested`); window.setTimeout(() => setToast(null), 2200); }
+    } catch (error) { if (request === sourceRequest.current) setSourceError((error as Error).message); } finally { if (request === sourceRequest.current) setSourceBusy(false); }
   };
   const registerWorkflowMissing = async () => {
     if (!/^[a-f0-9]{7,64}$/i.test(workspace.baseSha)) { setValidationStatus("not_verified"); return; }
@@ -481,6 +503,8 @@ export function AgentHarness() {
   const stopAgentJob = (jobId: string) => agentControllers.current.get(jobId)?.abort();
   const applyAgentJob = async (jobId: string) => {
     const job = agentJobsRef.current.find((item) => item.id === jobId); if (!job?.patch || job.status !== "ready") return;
+    if (job.workspaceId !== workspace.id || !activeLiveUrl || activeWorkspaceRef.current !== job.workspaceId) { setToast('Open this job’s repository preview before applying its source patch.'); return; }
+    if (!job.sourceFile) { setToast('This selection has no source mapping. Select a real source node before applying.'); return; }
     const conflictingApply = agentJobsRef.current.find((item) => item.id !== jobId && item.scopeKey === job.scopeKey && item.status === "applying");
     if (conflictingApply) { setToast(`Another patch is writing ${job.scopeKey}. This edit remains ready.`); window.setTimeout(() => setToast(null), 2600); return; }
     mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "applying" } : item));
@@ -490,15 +514,17 @@ export function AgentHarness() {
         const sourceVariants = workspace.frames.filter((frame) => frameRouteIdentity(frame) === job.sourceRouteId);
         const existingTargets = workspace.frames.filter((frame) => frame.route === route);
         if (job.sourceFile && activeLiveUrl) {
-          const { readLiveSource, writeLiveSource } = await import("../lib/live-preview-client");
-          const source = await readLiveSource(job.sourceFile); const linkedSource = linkSourceControl(source, job.before, route);
+          const { readLiveSource, applyLiveSourceChanges } = await import("../lib/live-preview-client");
+          const source = await readLiveSource(job.workspaceId, job.sourceFile); const linkedSource = linkSourceControl(source, job.before, route);
+          const changes: Array<{ path: string; before: string | null; after: string }> = [];
           if (!existingTargets.length) {
             const targetPath = nextRouteSourcePath(job.sourceFile, route);
             if (!targetPath) throw new Error("This router needs a multi-file adapter before Design Harness can safely create the page. No source was changed.");
             const pageSource = generatedRouteSource(job.patch); parse(pageSource, { sourceType: "module", plugins: ["jsx", "typescript"] });
-            await writeLiveSource(targetPath, pageSource);
+            changes.push({ path: targetPath, before: null, after: pageSource });
           }
-          await writeLiveSource(job.sourceFile, linkedSource);
+          changes.push({ path: job.sourceFile, before: source, after: linkedSource });
+          await applyLiveSourceChanges(job.workspaceId, changes);
         }
         const newSourceRouteId = `${crypto.randomUUID()}-route`;
         const pageName = job.patch.pageName;
@@ -525,16 +551,19 @@ export function AgentHarness() {
         if (gap) persistGap({ ...gap, status: "resolved", transactionId: `route:${target?.id ?? newSourceRouteId}` });
         commit("route.create-and-connect", "missing destination", route, workspace.frames.find((frame) => frame.id === job.frameId));
         mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "applied" } : item));
-        if (target) { setSelectedFrame(target.id); setSelected(`${target.id}:headline`); setPan({ x: 80 - target.x * zoom, y: 60 - target.y * zoom }); }
-        setToast(`${job.patch.pageName} built at ${route} and connected to ${job.nodeLabel}`); window.setTimeout(() => setToast(null), 3000);
+        if (activeWorkspaceRef.current === job.workspaceId) {
+          if (target) { setSelectedFrame(target.id); setSelected(`${target.id}:headline`); setPan({ x: 80 - target.x * zoom, y: 60 - target.y * zoom }); }
+          setToast(`${job.patch.pageName} source saved · preview not verified`); window.setTimeout(() => setToast(null), 3000);
+        }
         return;
       }
       if (job.sourceFile && activeLiveUrl) {
-        const { readLiveSource, writeLiveSource } = await import("../lib/live-preview-client"); const source = await readLiveSource(job.sourceFile); const anchor = `>${job.before}<`;
+        const { readLiveSource, writeLiveSource } = await import("../lib/live-preview-client"); const source = await readLiveSource(job.workspaceId, job.sourceFile); const anchor = `>${job.before}<`;
         if (source.split(anchor).length !== 2) throw new Error("The selected text is no longer unique in the source. Open Code to reconcile it safely.");
-        const output = source.replace(anchor, `>${job.patch.after}<`); parse(output, { sourceType: "module", plugins: ["jsx", "typescript"] }); await writeLiveSource(job.sourceFile, output);
+        const output = source.replace(anchor, `>${job.patch.after}<`); parse(output, { sourceType: "module", plugins: ["jsx", "typescript"] }); await writeLiveSource(job.workspaceId, job.sourceFile, output, source);
       }
-      updateNodeContent(job.frameId, job.node as TextNodeKey, job.patch.after, job.before); mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "applied" } : item)); centerFrame(job.frameId); setToast(`${job.nodeLabel} updated on ${job.frameName}`); window.setTimeout(() => setToast(null), 2400);
+      updateNodeContent(job.frameId, job.node as TextNodeKey, job.patch.after, job.before); mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "applied" } : item));
+      if (activeWorkspaceRef.current === job.workspaceId) { centerFrame(job.frameId); setToast(`${job.nodeLabel} source saved · preview not verified`); window.setTimeout(() => setToast(null), 2400); }
     } catch (error) { mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "ready", error: (error as Error).message } : item)); }
   };
 
@@ -557,7 +586,7 @@ export function AgentHarness() {
   return <main className={`harness-shell ${setupReady ? "setup-ready" : "setup-blocked"}`} style={{ gridTemplateColumns: `${leftOpen ? leftWidth : 54}px minmax(0, 1fr) ${rightOpen && setupReady ? 304 : 0}px` }}>
     <aside className={`left-sidebar ${leftOpen ? "open" : "closed"}`}><div className="brand-row"><HarnessMark compact={!leftOpen} />{leftOpen && <div><strong>Design Harness</strong><span>Code-native design</span></div>}<button onClick={() => setLeftOpen(!leftOpen)}>{leftOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}</button></div>{leftOpen && <>
       <button className="new-workspace" onClick={() => setWorkspaceModal(true)}><Plus size={14} /> New workspace</button>
-      <label className="workspace-picker"><span>WORKSPACE</span><select value={activeWorkspaceId} onChange={(event) => { const next = workspaces.find((item) => item.id === event.target.value)!; void import("../lib/live-preview-client").then(({ stopLiveRepositoryPreview }) => stopLiveRepositoryPreview()); setLivePreview({ workspaceId: next.id, status: "idle", message: "Live repository preview is not running.", url: null }); setFocusFrameId(null); setActiveWorkspaceId(next.id); setSelectedFrame(next.frames[0].id); setSelected(`${next.frames[0].id}:headline`); setActiveAgentJobId(null); setAttachedGap(null); setComposer(""); setSourceDraft(""); setSourceOriginal(""); setSourcePath(""); setPan({ x: 60, y: 18 }); }}><option disabled value="">Choose workspace</option>{workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+      <label className="workspace-picker"><span>WORKSPACE</span><select value={activeWorkspaceId} onChange={(event) => switchWorkspace(event.target.value)}><option disabled value="">Choose workspace</option>{workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
       <button className="repo-switcher" onClick={() => setWorkspaceModal(true)}><GitBranch size={15} /><span><strong>{workspace.repository}</strong><small>Updated {dateLabel(workspace.updatedAt)} · {timeLabel(workspace.updatedAt)}</small></span><ChevronDown size={14} /></button>
       <div className={`github-app-card ${githubStatus.connected ? "connected" : "missing"}`}><GitBranch size={14} /><div><strong>{githubStatus.connected ? "GitHub App connected" : githubStatus.configured ? "Install GitHub App" : "Set up GitHub App"}</strong><span>{githubStatus.connected ? "Read-only imports · PR write only after approval" : githubStatus.configured ? "Choose only the repositories Design Harness may access" : "Create a private, user-owned App without a personal token"}</span></div>{!githubStatus.connected && <a href={githubStatus.configured ? "/api/github/install" : "/api/github/manifest"}>{githubStatus.configured ? "Install" : "Set up"}</a>}</div>
       <div className="sidebar-search"><Search size={14} /><input placeholder="Search this workspace" /></div>
@@ -566,6 +595,7 @@ export function AgentHarness() {
       <div className="side-section"><div className="section-title"><span>SAVED STATES</span><button><Plus size={13} /></button></div><button className="state-item"><span className="state-glyph">◇</span><span>Success state</span><small>{dateLabel(workspace.updatedAt)}</small></button><button className="state-item"><span className="state-glyph">◇</span><span>Responsive state</span><small>{timeLabel(workspace.updatedAt)}</small></button></div>
       <button className="memory-card" onClick={() => setBrandModal(true)}><Palette size={15} /><div><strong>Brand & design intelligence</strong><span>{workspace.brand.colors.length} colors · {workspace.brand.fonts.length} fonts · {(workspace.brand.documents ?? []).length} docs</span></div><ChevronRight size={14} /></button>
       {workspace.repositoryUrl && <button className={`runtime-card ${livePreview.workspaceId === workspace.id ? livePreview.status : "idle"}`} onClick={() => void startRepositoryPreview()} disabled={["downloading", "mounting", "installing", "starting"].includes(livePreview.status) && livePreview.workspaceId === workspace.id}>{activeLiveUrl ? <RefreshCw size={15} /> : <Play size={15} />}<div><strong>{activeLiveUrl ? "Restart live repository" : "Run live repository"}</strong><span>{livePreview.workspaceId === workspace.id ? livePreview.message : "One WebContainer · explicit trust required"}</span></div></button>}
+      {livePreview.workspaceId === workspace.id && !['idle', 'error'].includes(livePreview.status) && <IconControl className="runtime-stop" label="Stop preview" explanation="Stop download, installation or rendering. Approved source edits stay saved on this device." onClick={() => void stopRepositoryPreview()}><CircleStop size={20} /></IconControl>}
       <div className="workspace-status" data-running={Boolean(activeLiveUrl)}><span><i />{activeLiveUrl ? `${surfaceSchedule.total} live · ${Math.max(0, workspace.frames.length - surfaceSchedule.total)} paused` : "Preview not started"}</span><small>{workspace.frames.length} responsive frame(s) · max 3 live</small></div>
     </>} {leftOpen && <div className="sidebar-resizer" onPointerDown={resizeSidebar} />}</aside>
 
@@ -597,7 +627,7 @@ export function AgentHarness() {
         {INTERACTION_NODES.includes(selectedNode) && <section className={`interaction-status ${selectedTarget ? "linked" : "missing"}`}><Link2 size={14} /><div><strong>{selectedTarget ? `Opens ${selectedTarget.name}` : "No next state designed"}</strong><span>{selectedTarget ? selectedTarget.route : "A prototype click will log this as a design opportunity."}</span></div>{!selectedTarget && <button onClick={() => openPageModal("duplicate", selectedGap ?? { id: crypto.randomUUID(), frameId: selectedSpec.id, node: selectedNode, label: selectedContent, firstSeenAt: now(), lastClickedAt: now(), clickCount: 0, suggestedRoute: `/${selectedContent.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`, status: "open" })}><Plus size={12} />Add state</button>}</section>}
         <section className="source-anchor"><Code2 size={14} /><div><span>Hierarchy-preserving source anchor</span><strong>{selectedSpec.route} · {selectedMeta.group} · {selectedNode}</strong><small>Canvas, Layers, Design, and Code share this node ID</small></div><ChevronRight size={14} /></section></div>}
       {inspectorTab === "layers" && <div className="inspector-body layer-tree"><div><ChevronDown size={13} /><Layers3 size={13} /><strong>{selectedSpec.name}Page</strong></div>{(["Navigation", "Route content"] as const).map((group) => <div className="layer-group" key={group}><div className="indent"><ChevronDown size={13} /><Layers3 size={13} /><span>{group}</span></div>{TEXT_NODE_KEYS.filter((node) => NODE_META[node].group === group).map((node) => { const target = workspace.frames.find((frame) => frame.id === workspace.connections?.[selectedSpec.id]?.[node]); const gap = activeGaps.find((item) => item.frameId === selectedSpec.id && item.node === node); return <button key={node} className={`indent-2 ${selectedNode === node ? "active" : ""}`} onClick={() => selectFrame(selectedSpec.id, node)}><Code2 size={13} /><span>{NODE_META[node].tag} · {NODE_META[node].label}</span>{INTERACTION_NODES.includes(node) && <i className={target ? "layer-linked" : gap ? "layer-gap logged" : "layer-gap"}>{target ? `→ ${target.name}` : gap ? "gap logged" : "no state"}</i>}</button>; })}</div>)}{activeGaps.filter((gap) => gap.frameId === selectedSpec.id).map((gap) => <article className="gap-suggestion" key={gap.id}><header><span>DESIGN OPPORTUNITY</span><small>{dateLabel(gap.lastClickedAt)} · {timeLabel(gap.lastClickedAt)} · {gap.clickCount} click{gap.clickCount === 1 ? "" : "s"}</small></header><strong>“{gap.label}” has no destination</strong><p>Suggested next route: {gap.suggestedRoute}</p><div className="gap-actions"><button onClick={() => openGapInChat(gap)}><Sparkles size={12} />Plan in chat</button><button onClick={() => openPageModal("duplicate", gap)}><Plus size={12} />Create state</button></div></article>)}</div>}
-      {inspectorTab === "code" && <div className="inspector-body code-panel"><div className="code-status"><Check size={12} /><span>{activeLiveUrl ? "Live source runtime connected" : "Source projection only"}</span><small>{cssSize(selectedStyle)}</small></div><div className="file-chip">{selectedSpec.sourceFile ?? (selectedSpec.route === "/" ? "app/page.tsx" : `app${selectedSpec.route}/page.tsx`)} · {selectedMeta.label}</div>{sourcePath ? <><label className="source-editor-label"><span>Direct JSX/TSX copy and code edit</span><small>Syntax is checked before writing to the running repository.</small></label><textarea className="source-editor" spellCheck={false} value={sourceDraft} onChange={(event) => setSourceDraft(event.target.value)} /><div className="source-actions"><button onClick={() => navigator.clipboard.writeText(sourceDraft)}><Copy size={13} />Copy file</button><button className="primary" disabled={sourceBusy || sourceDraft === sourceOriginal} onClick={() => void applySourceFile()}>{sourceBusy ? "Checking…" : "Apply to live .tsx"}</button></div>{sourceError && <p className="import-error">{sourceError}</p>}</> : <><pre>{sourceCode}</pre><p>{activeLiveUrl ? "Load the mapped route source to edit copy or JSX directly. The clean file remains local until an explicit draft commit and push." : "Start the trusted live repository runtime to edit the actual mapped JSX/TSX file. This projection is not the physical repository file."}</p><button onClick={() => void loadSourceFile()} disabled={sourceBusy || !activeLiveUrl || !selectedSpec.sourceFile}><Code2 size={13} />{sourceBusy ? "Loading…" : "Open actual route source"}</button><button onClick={() => navigator.clipboard.writeText(sourceCode)}><Copy size={13} />Copy projected source</button>{sourceError && <p className="import-error">{sourceError}</p>}</>}</div>}
+      {inspectorTab === "code" && <div className="inspector-body code-panel"><div className="code-status"><Check size={12} /><span>{activeLiveUrl ? "Live source runtime connected" : "Source projection only"}</span><small>{cssSize(selectedStyle)}</small></div><div className="file-chip">{sourcePath || selectedSpec.sourceFile || (selectedSpec.route === "/" ? "app/page.tsx" : `app${selectedSpec.route}/page.tsx`)}{!sourcePath && <> · {selectedMeta.label}</>}</div>{sourcePath ? <><label className="source-editor-label"><span>Direct JSX/TSX copy and code edit</span><small>Syntax is checked before writing to the running repository.</small></label><textarea className="source-editor" spellCheck={false} value={sourceDraft} onChange={(event) => setSourceDraft(event.target.value)} /><div className="source-actions">{selectedSpec.sourceFile && selectedSpec.sourceFile !== sourcePath && <button disabled={sourceBusy || !activeLiveUrl} onClick={() => void loadSourceFile()}>Open selected route source</button>}<button onClick={() => navigator.clipboard.writeText(sourceDraft)}><Copy size={13} />Copy file</button><button className="primary" disabled={sourceBusy || !activeLiveUrl || sourceDraft === sourceOriginal} onClick={() => void applySourceFile()}>{sourceBusy ? "Checking…" : "Apply to live .tsx"}</button></div>{sourceError && <p className="import-error">{sourceError}</p>}</> : <><pre>{sourceCode}</pre><p>{activeLiveUrl ? "Load the mapped route source to edit copy or JSX directly. The clean file remains local until an explicit draft commit and push." : "Start the trusted live repository runtime to edit the actual mapped JSX/TSX file. This projection is not the physical repository file."}</p><button onClick={() => void loadSourceFile()} disabled={sourceBusy || !activeLiveUrl || !selectedSpec.sourceFile}><Code2 size={13} />{sourceBusy ? "Loading…" : "Open actual route source"}</button><button onClick={() => navigator.clipboard.writeText(sourceCode)}><Copy size={13} />Copy projected source</button>{sourceError && <p className="import-error">{sourceError}</p>}</>}</div>}
       {inspectorTab === "changes" && <div className="inspector-body changes-list">{activeTransactions.length ? activeTransactions.map((tx) => <article key={tx.id}><header><span>{tx.target}</span><small>{tx.date} · {tx.timestamp}</small></header><strong>{tx.property}</strong><p><del>{tx.before}</del><ChevronRight size={11} /><ins>{tx.after}</ins></p><footer><Check size={11} />{tx.status}</footer></article>) : <div className="empty-changes">No changes in this workspace yet.</div>}</div>}<div className="inspector-footer"><button><Settings2 size={14} />{workspace.name} settings</button></div></> : <button className="open-inspector" onClick={() => setRightOpen(true)}><PanelRightOpen size={16} /></button>}</aside>
     {!rightOpen && <button className="floating-inspector" onClick={() => setRightOpen(true)}><PanelRightOpen size={17} /></button>}{toast && <div className="toast"><Check size={14} />{toast}</div>}
 

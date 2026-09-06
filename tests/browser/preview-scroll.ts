@@ -64,6 +64,23 @@ try {
   await page.waitForFunction(()=>document.querySelectorAll('iframe').length===3&&!document.querySelector('.frame-runtime-feedback'));
   assert.equal(await page.frameLocator('iframe[title="frame-0"]').locator('body').evaluate(()=>scrollY),900);
   result.checks.push('90-frame schedule: three maximum, zero below 65%, position restored on return');
+  await page.frameLocator('iframe[title="frame-0"]').locator('body').evaluate((_element,parentOrigin)=>{
+    parent.postMessage({type:'agent-harness:runtime-error',frameId:'frame-0',message:'Synthetic runtime failure'},parentOrigin);
+    parent.postMessage({type:'agent-harness:ready',frameId:'frame-0'},parentOrigin);
+  },origin);
+  await page.getByRole('alert').waitFor();
+  await page.getByRole('alert').getByText('Details',{exact:true}).click();
+  await page.getByText('Synthetic runtime failure',{exact:true}).waitFor();
+  await page.getByRole('button',{name:'Retry frame-0 preview',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.frame-runtime-feedback'));
+  assert.equal(await page.frameLocator('iframe[title="frame-0"]').locator('body').evaluate(()=>scrollY),900);
+  result.checks.push('runtime error survives late ready message; explicit retry reconnects and restores scroll');
+  await page.getByRole('button',{name:'Save source draft',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#draft-status')?.textContent==='Saved');
+  await page.reload({waitUntil:'networkidle'});
+  await page.getByRole('button',{name:'Read source draft',exact:true}).click();
+  await page.waitForFunction(()=>document.querySelector('#draft-status')?.textContent==='approved edit');
+  result.checks.push('actual IndexedDB source delta survives full page reload');
   await page.screenshot({path:new URL('../../outputs/audit/preview-scroll.png',import.meta.url).pathname});
   assert.equal(result.errors.length,0);
 }catch(error){result.failure=(error as Error).message;process.exitCode=1;}

@@ -1,16 +1,15 @@
 "use client";
 
 import { unzipSync } from "fflate";
-import type { FileSystemTree, WebContainer, WebContainerProcess } from "@webcontainer/api";
-import { MAX_ARCHIVE_BYTES, MAX_EXPANDED_BYTES, MAX_FILE_BYTES, MAX_ARCHIVE_FILES, safeRepositoryPath } from "./archive-policy";
+import type { FileSystemTree, WebContainer } from "@webcontainer/api";
+import { MAX_ARCHIVE_BYTES, MAX_EXPANDED_BYTES, MAX_FILE_BYTES, MAX_ARCHIVE_FILES, safeRepositoryPath, boundedStream } from "./archive-policy";
 import { buildPreviewBridge } from './preview-bridge';
+import { PreviewSession, type PreviewStart } from './preview-session';
+import { browserPreviewDrafts, type SourceChange } from './preview-drafts';
 
-export type LivePreviewStatus = "idle" | "downloading" | "mounting" | "installing" | "starting" | "ready" | "error";
-export type LivePreviewEvent = { status: LivePreviewStatus; message: string; url?: string };
+export type { LivePreviewStatus, LivePreviewEvent } from './preview-session';
 
 let containerPromise: Promise<WebContainer> | null = null;
-let activeProcess: WebContainerProcess | null = null;
-let activeWorkspace = "";
 
 function safeArchivePath(path: string) {
   const normalized = path.split("/").slice(1).join("/").replace(/\/$/, "");
@@ -62,79 +61,20 @@ async function container() {
   return containerPromise;
 }
 
-async function resetWorkspace(instance: WebContainer, workspaceId: string, files: FileSystemTree) {
-  if (activeProcess) { activeProcess.kill(); activeProcess = null; }
-  if (activeWorkspace) await instance.fs.rm(`/workspaces/${activeWorkspace}`, { recursive: true, force: true }).catch(() => undefined);
-  await instance.mount({ workspaces: { directory: { [workspaceId]: { directory: files } } } });
-  activeWorkspace = workspaceId;
-}
-
-function commands(files: FileSystemTree) {
-  const manager = files["pnpm-lock.yaml"] ? "pnpm" : files["yarn.lock"] ? "yarn" : "npm";
-  const install = manager === "pnpm" ? ["pnpm", ["install", "--frozen-lockfile"]] : manager === "yarn" ? ["yarn", ["install", "--immutable"]] : files["package-lock.json"] ? ["npm", ["ci"]] : ["npm", ["install"]];
-  return { manager, install: install as [string, string[]], start: [manager, ["run", "dev"]] as [string, string[]] };
-}
-
-export async function startLiveRepositoryPreview(input: { workspaceId: string; repositoryUrl: string; ref: string; onEvent: (event: LivePreviewEvent) => void }) {
-  input.onEvent({ status: "downloading", message: "Downloading the approved repository archive…" });
-  const response = await fetch(`/api/github/archive?repositoryUrl=${encodeURIComponent(input.repositoryUrl)}&ref=${encodeURIComponent(input.ref)}`, { cache: "no-store" });
+async function downloadRepository(input: PreviewStart, signal: AbortSignal) {
+  const response = await fetch(`/api/github/archive?repositoryUrl=${encodeURIComponent(input.repositoryUrl)}&ref=${encodeURIComponent(input.ref)}`, { cache: "no-store", signal });
   if (!response.ok) { const payload = await response.json().catch(() => ({ error: "Archive download failed." })) as { error?: string }; throw new Error(payload.error ?? "Archive download failed."); }
+  if (!response.body || Number(response.headers.get('content-length')) > MAX_ARCHIVE_BYTES) throw new Error('Repository exceeds the archive transfer limit.');
   let bytes: Uint8Array;
-  try { bytes = new Uint8Array(await response.arrayBuffer()); }
-  catch { throw new Error("Archive transfer was interrupted or exceeded its limit. Retry after checking repository size and connection."); }
-  const files = repositoryArchiveToTree(bytes);
-  input.onEvent({ status: "mounting", message: "Mounting one bounded source tree…" });
-  const instance = await container();
-  await resetWorkspace(instance, input.workspaceId, files);
-  // Preview-only injection covers Next as well as Vite without modifying the
-  // authoritative layout/index file or adding publishable instrumentation.
-  await instance.setPreviewScript(buildPreviewBridge(location.origin));
-  const cwd = `/workspaces/${input.workspaceId}`;
-  const { manager, install, start } = commands(files);
-  if (manager !== "npm") { const corepack = await instance.spawn("corepack", ["enable"], { cwd }); if (await corepack.exit !== 0) throw new Error(`Unable to enable ${manager} in the preview runtime.`); }
-  input.onEvent({ status: "installing", message: `Installing locked dependencies with ${manager}…` });
-  const installProcess = await instance.spawn(install[0], install[1], { cwd });
-  let installLog = "";
-  const drain = installProcess.output.pipeTo(new WritableStream({ write(chunk) { installLog = (installLog + chunk).slice(-2000); } }));
-  const installCode = await installProcess.exit; await drain;
-  if (installCode !== 0) throw new Error(`Dependency installation failed. ${installLog.replace(/\x1b\[[0-9;]*m/g, '').slice(-900)}`);
-  input.onEvent({ status: "starting", message: "Starting the repository dev server…" });
-  const url = await new Promise<string>((resolve, reject) => {
-    const timer = window.setTimeout(() => reject(new Error("The dev server did not become ready within two minutes.")), 120_000);
-    const unsubscribe = instance.on("server-ready", (_port, readyUrl) => { window.clearTimeout(timer); unsubscribe(); resolve(readyUrl); });
-    void instance.spawn(start[0], start[1], { cwd }).then((process) => {
-      activeProcess = process;
-      void process.output.pipeTo(new WritableStream({ write() {} })).catch(() => undefined);
-      void process.exit.then((code) => { if (code !== 0) { window.clearTimeout(timer); reject(new Error(`The dev server stopped with exit code ${code}.`)); } });
-    }, reject);
-  });
-  input.onEvent({ status: "ready", message: "Real repository preview ready.", url });
-  return url;
+  try { bytes = new Uint8Array(await new Response(boundedStream(response.body)).arrayBuffer()); }
+  catch (error) { if (signal.aborted) throw error; throw new Error("Archive transfer was interrupted or exceeded its limit. Retry after checking repository size and connection."); }
+  signal.throwIfAborted(); return repositoryArchiveToTree(bytes);
 }
 
-export async function readLiveSource(path: string) {
-  safeRepositoryPath(path);
-  const instance = await container();
-  if (!activeWorkspace) throw new Error("Start the live repository preview first.");
-  return instance.fs.readFile(`/workspaces/${activeWorkspace}/${path}`, "utf-8");
-}
-
-export async function writeLiveSource(path: string, content: string) {
-  safeRepositoryPath(path);
-  if (/^\.github\/workflows\//i.test(path)) throw new Error("Workflow files cannot be changed by Design Harness.");
-  const instance = await container();
-  if (!activeWorkspace) throw new Error("Start the live repository preview first.");
-  const fullPath = `/workspaces/${activeWorkspace}/${path}`;
-  const parent = fullPath.split("/").slice(0, -1).join("/");
-  await instance.fs.mkdir(parent, { recursive: true });
-  await instance.fs.writeFile(fullPath, content);
-}
-
-export async function stopLiveRepositoryPreview() {
-  if (activeProcess) { activeProcess.kill(); activeProcess = null; }
-  if (containerPromise && activeWorkspace) {
-    const instance = await containerPromise;
-    await instance.fs.rm(`/workspaces/${activeWorkspace}`, { recursive: true, force: true });
-    activeWorkspace = "";
-  }
-}
+const session = new PreviewSession({ boot: container, download: downloadRepository, bridge: () => buildPreviewBridge(location.origin), drafts: browserPreviewDrafts });
+export const startLiveRepositoryPreview = (input: PreviewStart) => session.start(input);
+export const stopLiveRepositoryPreview = () => session.stop();
+export const readLiveSource = (workspaceId: string, path: string) => session.read(workspaceId, path);
+export const writeLiveSource = (workspaceId: string, path: string, content: string, expected: string | null) => session.apply(workspaceId, [{ path, before: expected, after: content }]);
+export const applyLiveSourceChanges = (workspaceId: string, changes: SourceChange[]) => session.apply(workspaceId, changes);
+export const getLivePreviewDiagnostics = (workspaceId: string) => session.diagnostics(workspaceId);

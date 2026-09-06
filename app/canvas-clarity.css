@@ -68,5 +68,9 @@
 .uncaptured-preview small { font-size: 12px; }
 .live-iframe-viewport, .focus-iframe-shell { position: relative; }
 .frame-runtime-feedback { position: absolute; z-index: 3; top: 8px; left: 8px; right: 8px; width: fit-content; max-width: calc(100% - 16px); border: 1px solid #d9dee7; border-radius: 8px; padding: 8px 12px; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; background: #fffffff5; color: #454d58; pointer-events: none; }
-.frame-runtime-feedback.error { background: #fff3f0; color: #a02c21; }
+.frame-runtime-feedback.error { background: #fff3f0; color: #a02c21; pointer-events: auto; }
+.frame-error-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.frame-error-title button { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px; border: 1px solid currentColor; border-radius: 6px; background: white; color: inherit; font: inherit; cursor: pointer; }
+.frame-runtime-feedback summary { cursor: pointer; margin-top: 5px; }
+.frame-runtime-feedback p { margin: 8px 0 0; max-height: 160px; overflow: auto; }
 .workspace-status[data-running=false] span i { background: #989da5; }
