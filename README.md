@@ -18,7 +18,7 @@ inspector or a successful runtime start as evidence of source synchronization.
 | Inactive cards | Explicit placeholders until actual thumbnails exist. Imported cards no longer display fabricated page layouts |
 | DOM and visual edits | Real imported DOM-to-JSX/CSS anchoring is not integrated. Legacy Design/Layers values describe the demo projection, not trustworthy imported source |
 | Source editor | Workspace-bound reads and serialized writes with exact expected-content checks. Source deltas are saved before writes; failed file batches restore previous contents. Runtime-failure/HMR/style validation and full transactional approval remain incomplete |
-| Patch adapters | JSX, CSS and Tailwind transformation primitives have unit tests; these are not proof of the whole inspector/agent path |
+| Patch adapters | Parsed static JSX/class spans, exact hash-bound forward/inverse patches and CSS declaration guards; unit and real React/HMR fixture tests. These are not proof of the whole inspector/agent path |
 | Agent | Personal-key streaming and approved proposals exist; selected-element execution, durable jobs and cross-workspace application need end-to-end validation |
 | Concurrency | Scheduling primitives are unit-tested. Comprehensive repository-wide write serialization is not yet integrated across every mutation path |
 | Persistence | Approved source deltas use browser-local IndexedDB, keyed by workspace, repository and full base SHA, and replay after restart with conflict checks. They are not a server backup. Schema/R2 bindings alone do not prove encrypted patch persistence |
@@ -163,6 +163,7 @@ Validation:
 ```bash
 pnpm test
 pnpm run test:preview
+pnpm run test:patcher
 pnpm build
 node --test tests/rendered-html.test.mjs
 ```
@@ -172,6 +173,33 @@ path. It launches a separate headless test browser, exercises real iframe and
 bridge behavior using synthetic pages, blocks non-fixture requests, and writes
 ignored results under `outputs/audit`. It does not log into GitHub or certify
 private-import, WebContainer compatibility, production pixels or renderer RAM.
+
+### Direct source-patch boundaries
+
+`replaceJsxText` edits an exact static JSX child, not a matching comment,
+JavaScript string, dynamic expression or attribute. Duplicate copy requires an
+explicit current source range. JSX-looking copy is escaped as literal text;
+intentional spaces/newlines use a literal expression so the JSX compiler does
+not fold them. A visible hard line break still depends on the text's CSS or an
+explicit structural `<br>` edit; this helper does not silently change layout.
+
+Static quoted `className` edits preserve whitespace and quotation style, support
+entity-escaped tokens and reject ambiguous tokens or later overriding spreads.
+Dynamic class expressions remain assisted work. CSS edits reject duplicate
+declarations, ambiguous selectors and injected extra declarations/rules.
+PostCSS syntax parsing is not a browser CSS-value or responsive-intent check.
+
+Each result contains a single exact source span with before/after hashes and an
+inverse patch. Replaying on stale or altered text fails closed. Offsets use
+JavaScript UTF-16 units (Babel's convention), not byte offsets. Direct parsing is
+bounded to 1,048,576 source units per file; large files need a different reviewed
+editing path. These helpers are not yet connected to imported DOM selection.
+
+`test:patcher` uses actual helper output, an isolated synthetic React fixture,
+Vite HMR and headless Chromium to verify literal text, button rounding, computed
+CSS and exact undo without a page reload or lost component state. It does **not**
+claim that an API prompt changes a private imported frame, that Tailwind itself
+compiled, or that a production screenshot matches.
 
 ## Preview and production-verification states
 

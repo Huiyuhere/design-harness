@@ -11,6 +11,7 @@
     "start": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext start",
     "test": "node --import tsx --test tests/*.test.ts",
     "test:preview": "node --import tsx tests/browser/preview-scroll.ts",
+    "test:patcher": "node --import tsx tests/browser/source-patching.ts",
     "test:render": "pnpm run build && node --test tests/rendered-html.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate"
