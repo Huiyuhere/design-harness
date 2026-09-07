@@ -7,7 +7,7 @@ import { buildPreviewBridge } from '../../lib/preview-bridge';
 
 const origin = 'http://localhost:8790';
 const report = { scope:'Actual PreviewFrame, preview bridge and LiveInspector in cross-origin Chromium. Synthetic DOM fixture; NOT private import, source mapping, paid AI, production parity or WebContainer acceptance.', checks:[] as string[], errors:[] as string[], failure:undefined as string | undefined, maxSnapshotBytes:0, iframeNavigations:0 };
-await build({ configFile:false, plugins:[react()], define:{'process.env.NODE_ENV':'"production"'}, logLevel:'error', build:{outDir:'outputs/audit/inspection-dist',emptyOutDir:true,lib:{entry:'tests/browser/inspection-fixture.tsx',formats:['es'],fileName:()=>'fixture.js',cssFileName:'fixture'}} });
+await build({ configFile:false, plugins:[react()], define:{'process.env.NODE_ENV':'"production"'}, logLevel:'error', build:{outDir:'outputs/audit/inspection-dist',emptyOutDir:true,rollupOptions:{output:{inlineDynamicImports:true}},lib:{entry:'tests/browser/inspection-fixture.tsx',formats:['es'],fileName:()=>'fixture.js',cssFileName:'fixture'}} });
 const js = await readFile('outputs/audit/inspection-dist/fixture.js','utf8');
 const css = await readFile('outputs/audit/inspection-dist/fixture.css','utf8');
 const browser = await chromium.launch({executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',headless:true});
@@ -28,7 +28,7 @@ try {
   const page = await context.newPage(); page.setDefaultTimeout(15000); page.on('pageerror', error => report.errors.push(error.message));
   await page.goto(origin,{waitUntil:'networkidle'});
   const snapshot = async () => { const raw = await page.locator('#inspection').textContent(); report.maxSnapshotBytes=Math.max(report.maxSnapshotBytes,Buffer.byteLength(raw ?? '')); return JSON.parse(raw ?? 'null'); };
-  await page.waitForFunction(() => JSON.parse(document.querySelector('#inspection')!.textContent ?? 'null')?.layers.length === 200);
+  await page.waitForFunction(() => JSON.parse(document.querySelector('#inspection')?.textContent ?? 'null')?.layers.length === 200);
   assert.equal((await snapshot()).truncated, true);
   assert.ok(!JSON.stringify(await snapshot()).includes('fixture-secret'));
   report.checks.push('Layer traversal bounded to 200; form values and explicitly private DOM excluded');

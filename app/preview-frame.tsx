@@ -4,12 +4,14 @@ import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { AlertCircle, RotateCw } from 'lucide-react';
 import { normalizeScrollSnapshot, previewFrameUrl, type ScrollSnapshot } from '../lib/frame-runtime';
 import { readInspection, type InspectCommand, type PreviewInspection, type PreviewMode } from '../lib/preview-inspection';
+import { connectPreviewValidation } from '../lib/preview-validation';
 
 /** One actual application iframe; stored scroll changes never change its URL. */
 type Props = {
   baseUrl: string; route: string; frameId: string; title: string; scroll?: ScrollSnapshot;
   style?: CSSProperties; onScroll: (snapshot: ScrollSnapshot) => void;
   mode?: PreviewMode; inspectCommand?: InspectCommand;
+  workspaceId?: string;
   onInspection?: (inspection: PreviewInspection | null) => void;
 };
 export function PreviewFrame(props: Props) {
@@ -18,13 +20,14 @@ export function PreviewFrame(props: Props) {
   return <LiveFrame key={`${src}:${attempt}`} {...props} onRetry={() => setAttempt(value => value + 1)} />;
 }
 
-function LiveFrame({ baseUrl, route, frameId, title, scroll, style, onScroll, onRetry, mode = 'prototype', inspectCommand, onInspection }: Props & { onRetry: () => void }) {
+function LiveFrame({ baseUrl, route, frameId, title, scroll, style, onScroll, onRetry, mode = 'prototype', inspectCommand, onInspection, workspaceId }: Props & { onRetry: () => void }) {
   const iframe = useRef<HTMLIFrameElement>(null);
   const latest = useRef({ scroll, onScroll, mode, onInspection });
   const [status, setStatus] = useState('Loading page…');
   const [error, setError] = useState(false);
   const src = previewFrameUrl(baseUrl, route, frameId);
   const expectedOrigin = new URL(src).origin;
+  useEffect(()=>{const source=iframe.current?.contentWindow;if(workspaceId&&source)return connectPreviewValidation(workspaceId,frameId,source,expectedOrigin);},[workspaceId,frameId,expectedOrigin]);
   useEffect(() => { latest.current = { scroll, onScroll, mode, onInspection }; }, [scroll, onScroll, mode, onInspection]);
   const initialize = () => iframe.current?.contentWindow?.postMessage({ type: 'agent-harness:init', frameId, mode: latest.current.mode, scroll: normalizeScrollSnapshot(latest.current.scroll) }, expectedOrigin);
   useEffect(() => { iframe.current?.contentWindow?.postMessage({ type: 'agent-harness:mode', frameId, mode }, expectedOrigin); }, [frameId, mode, expectedOrigin]);

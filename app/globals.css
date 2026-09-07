@@ -4,6 +4,17 @@
 
 /* Real-page inspection: concise values, explicit mapping limits. */
 .live-inspector { font-size: .875rem; }
+.mapped-text-editor { margin:12px 0; }
+.mapped-text-editor label { display:block; font-weight:600; margin-bottom:8px; }
+.mapped-scope { margin:0 0 8px; color:#62656a; font-size:.875rem; line-height:1.4; }
+.mapped-text-editor textarea { width:100%; min-height:110px; padding:10px; resize:vertical; font:inherit; line-height:1.5; border:1px solid #d8dbe1; border-radius:8px; background:#fff; color:#202225; }
+.mapped-text-actions { display:flex; align-items:center; gap:8px; margin:8px 0; }
+.mapped-text-actions > button { min-height:36px; padding:7px 12px; border:1px solid #d8dbe1; border-radius:7px; background:white; font:inherit; }
+.mapped-text-actions > .primary { background:#202225; color:white; }
+.mapped-text-actions > button:disabled { opacity:.45; }
+.mapped-text-editor [role=alert] { color:#ae2c22; font-size:.875rem; line-height:1.5; }
+.mapped-text-editor [role=status] { color:#40614a; font-size:.875rem; }
+.mapped-text-editor details { font-size:.8125rem; color:#62656a; margin-top:10px; overflow-wrap:anywhere; }
 .live-inspector-tools, .live-inspector-tools > span, .live-inspector-copy header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .live-inspector-tools { margin:0 0 16px; }
 .live-inspector .icon-control { position:relative; display:flex; flex:none; }

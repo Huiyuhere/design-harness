@@ -46,6 +46,12 @@ test('untrusted markers reject unsafe paths, invalid hashes and oversized encodi
   for(const file of ['../secret.tsx','/secret.tsx','.git/x.tsx','.design-harness-runtime/x.tsx','node_modules/x.tsx','app.js']) assert.equal(sourceAnchorSchema.safeParse({...anchor,file}).success,false);
   for(const raw of [null,{},'%ZZ','x'.repeat(8193),encodeURIComponent(JSON.stringify({...anchor,hash:'wrong'}))]) assert.equal(decodeSourceAnchor(raw),null);
 });
+test('JSX source formatting is not mistaken for rendered copy, while literal expressions retain whitespace',async()=>{
+  for(const [child,expected] of [['\n   Hello\n   world\n','Hello world'],['Hello\n\n world  ','Hello world  '],['  Single line  ','  Single line  '],['{"  literal\\nvalue  "}','  literal\nvalue  ']]){
+    const text=`export default()=> <p>${child}</p>`,anchor=(await mapped(text)).anchors[0];
+    assert.equal(inspectJsxAnchor(text,anchor).textTarget?.renderedValue,expected);
+  }
+});
 test('reserved attributes and excessive instrumentation refuse mapping without truncating source', async () => {
   assert.throws(()=>instrumentJsxSource('export default()=> <h1 data-ah-source="user"/>','x.tsx','a'.repeat(64)),/reserved/);
   assert.throws(()=>instrumentJsxSource('export default()=> <>'+Array.from({length:3001},()=>'<b/>').join('')+'</>','x.tsx','a'.repeat(64)),/element limit/);

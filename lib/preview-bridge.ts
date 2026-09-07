@@ -12,6 +12,35 @@ export function buildPreviewBridge(parentOrigin: string) {
     const send = (type, data = {}) => parent.postMessage({ type: 'agent-harness:' + type, frameId, ...data }, expectedOrigin);
     const generation = crypto.randomUUID(), ids = new WeakMap();
     let nextId = 1, selected = null, lookup = new Map(), overlay = null, selectionTimer = 0, selectionMarker = null;
+    let validation = null;
+    const cancelValidation = () => { if (validation) { clearTimeout(validation.timer); validation = null; } };
+    const validateSource = (requestId, expected) => {
+      cancelValidation();
+      if (!initialized || typeof requestId !== 'string' || requestId.length !== 36 || expected?.generation !== generation || typeof expected?.text !== 'string' || expected.text.length > 2000 || typeof expected?.anchor?.hash !== 'string' || expected.anchor.hash.length !== 64) return;
+      const element = selected && idFor(selected) === expected.nodeId ? selected : lookup.get(expected.nodeId);
+      const task = { requestId, timer:0, deadline:performance.now()+14000 }; validation=task;
+      const matches = () => {
+        if (!element?.isConnected || blocked(element)) return false;
+        if (expected.text && (element.getClientRects().length===0 || element.checkVisibility && !element.checkVisibility({checkOpacity:true,checkVisibilityCSS:true}))) return false;
+        const raw=element.getAttribute('data-ah-source'); if (!raw || raw.length>8192) return false;
+        try {
+          const anchor=JSON.parse(decodeURIComponent(raw));
+          return anchor.file===expected.anchor.file && anchor.hash===expected.anchor.hash && anchor.start===expected.anchor.start && anchor.end===expected.anchor.end && anchor.tag===expected.anchor.tag && element.textContent===expected.text;
+        } catch { return false; }
+      };
+      const check=async()=>{
+        if(validation!==task)return;
+        if(matches()){
+          if(document.fonts)await Promise.race([document.fonts.ready,new Promise(resolve=>setTimeout(resolve,1500))]);
+          await Promise.race([new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))),new Promise(resolve=>setTimeout(resolve,250))]);
+          if(validation!==task)return;
+          if(matches()){cancelValidation();inspect();send('source-validation',{requestId,status:'matched'});return;}
+        }
+        if(performance.now()>task.deadline){cancelValidation();send('source-validation',{requestId,status:'error'});return;}
+        task.timer=setTimeout(check,100);
+      };
+      void check();
+    };
     const blocked = element => !!element.closest('script,style,noscript,template,input,textarea,select,[hidden],[aria-hidden="true"],[data-private],[data-ah-private],[data-ah-inspector]');
     const idFor = element => { if (!ids.has(element)) ids.set(element, 'n' + nextId++); return ids.get(element); };
     const elementText = element => {
@@ -94,8 +123,11 @@ export function buildPreviewBridge(parentOrigin: string) {
     // Throttle, not debounce: long scrolls still save progress every 100 ms.
     addEventListener('scroll', () => { if (!timer && initialized && !restoring) timer = setTimeout(report, 100); }, { capture: true, passive: true });
     addEventListener('pagehide', report);
+    addEventListener('pagehide', cancelValidation);
     addEventListener('message', async event => {
       if (event.source !== parent || event.origin !== expectedOrigin || event.data?.frameId !== frameId) return;
+      if (event.data.type==='agent-harness:validate-source') { validateSource(event.data.requestId,event.data.expected); return; }
+      if (event.data.type==='agent-harness:cancel-source-validation') { if(validation?.requestId===event.data.requestId)cancelValidation();return; }
       if (event.data.type === 'agent-harness:mode' && ['edit','prototype','graph'].includes(event.data.mode)) { mode = event.data.mode; highlight(); return; }
       if (event.data.type === 'agent-harness:inspect') {
         if (event.data.nodeId) {

@@ -34,7 +34,7 @@ type Dependencies = {
   download(input: PreviewStart, signal: AbortSignal): Promise<FileSystemTree>;
   bridge(): string; drafts: PreviewDraftStore;
   sourceTool?(signal: AbortSignal): Promise<string>;
-  limits?: { download?: number; install?: number; server?: number };
+  limits?: { download?: number; install?: number; server?: number; validation?:number };
 };
 const cancelled = () => new DOMException('Preview stopped or workspace changed.', 'AbortError');
 // Strip terminal control sequences before putting process diagnostics in the UI.
@@ -258,7 +258,7 @@ export class PreviewSession {
     await session.instance!.fs.mkdir(full.slice(0, full.lastIndexOf('/')), { recursive: true });
     await session.instance!.fs.writeFile(full, text);
   }
-  apply(workspaceId: string, changes: SourceChange[]) {
+  apply(workspaceId: string, changes: SourceChange[], validate?: (signal: AbortSignal) => Promise<void>) {
     const session = this.requireReady(workspaceId);
     validateDraft({ key: session.draft.key, files: changes });
     return this.serial(async () => {
@@ -269,12 +269,20 @@ export class PreviewSession {
       const next = validateDraft({ key: prior.key, files: [...files.values()].filter(file => file.before !== file.after) });
       // Journal first: browser crash/teardown cannot silently lose an approved edit.
       await this.deps.drafts.save(next);
+      const written: SourceChange[] = [];
       try {
-        for (const change of changes) await this.put(session, change.path, change.after);
+        for (const change of changes) { written.push(change); await this.put(session, change.path, change.after); }
+        if (validate) await this.bounded(session, validate(session.controller.signal), this.deps.limits?.validation ?? 20_000, 'Render validation did not finish.');
+        this.assert(session);
         session.draft = next;
       } catch (error) {
-        try { for (const change of [...changes].reverse()) await this.put(session, change.path, change.before); await this.deps.drafts.save(prior); }
-        catch { session.ready = false; throw new Error('Source write and rollback failed. Stop editing and reload the saved draft before continuing.'); }
+        try {
+          // All-or-nothing preflight: never overwrite a newer, external change.
+          for (const change of written) { const text=await this.currentText(session,change.path); if (text !== change.after && text !== change.before) throw new Error('A newer source change or partial write prevents safe rollback.'); }
+          for (const change of [...written].reverse()) await this.put(session, change.path, change.before);
+          await this.deps.drafts.save(prior);
+        }
+        catch { session.ready = false; throw new Error('The edit could not be safely restored. Newer source was preserved. Stop editing and recover or export the draft before reloading.'); }
         throw error;
       }
     });

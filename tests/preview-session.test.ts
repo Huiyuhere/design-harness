@@ -162,6 +162,31 @@ test('concurrent writers serialize and compare against the actual latest source'
   const second = f.session.apply('one', [{ path: 'page.tsx', before: 'original', after: 'second' }]);
   await first; await assert.rejects(second, /Source conflict/); assert.equal(await f.session.read('one', 'page.tsx'), 'first'); await f.session.stop();
 });
+test('writers remain serialized through render validation, not only file writes',async()=>{
+  const f=fixture();await f.session.start(f.input());const gate=deferred<void>();let validating=false;
+  const first=f.session.apply('one',[{path:'page.tsx',before:'original',after:'first'}],async()=>{validating=true;await gate.promise;});
+  await until(()=>validating);
+  const second=f.session.apply('one',[{path:'page.tsx',before:'first',after:'second'}]);
+  await tick();assert.equal(f.files.get('/workspaces/one/page.tsx'),'first');
+  gate.resolve();await first;await second;assert.equal(await f.session.read('one','page.tsx'),'second');await f.session.stop();
+});
+test('render failure restores exact source and previous saved delta',async()=>{
+  const f=fixture();await f.session.start(f.input());await f.session.apply('one',[{path:'page.tsx',before:'original',after:'approved'}]);
+  await assert.rejects(f.session.apply('one',[{path:'page.tsx',before:'approved',after:'bad-render'}],async()=>{throw Error('render mismatch');}),/render mismatch/);
+  assert.equal(await f.session.read('one','page.tsx'),'approved');assert.equal([...f.drafts.values()][0].files[0].after,'approved');await f.session.stop();
+});
+test('a newer external change prevents rollback and further writes, rather than being overwritten',async()=>{
+  const f=fixture();await f.session.start(f.input());
+  await assert.rejects(f.session.apply('one',[{path:'page.tsx',before:'original',after:'proposed'}],async()=>{f.files.set('/workspaces/one/page.tsx','newer external work');throw Error('render mismatch');}),/Newer source was preserved/);
+  assert.equal(f.files.get('/workspaces/one/page.tsx'),'newer external work');assert.equal(f.session.diagnostics('one')?.ready,false);
+  assert.throws(()=>f.session.apply('one',[]),/no longer active/);await f.session.stop();
+});
+test('workspace stop aborts validation, restores the journal and clears only its old tree',async()=>{
+  const f=fixture();await f.session.start(f.input());let validating=false;
+  const pending=f.session.apply('one',[{path:'page.tsx',before:'original',after:'pending'}],signal=>new Promise((_resolve,reject)=>{validating=true;signal.addEventListener('abort',()=>reject(new DOMException('Stopped','AbortError')),{once:true});}));
+  const rejected=assert.rejects(pending,{name:'AbortError'});await until(()=>validating);await f.session.stop();await rejected;
+  assert.deepEqual([...f.drafts.values()][0].files,[]);assert.equal(f.files.size,0);
+});
 test('multi-file failure restores source and prior journal exactly', async () => {
   const f = fixture({ failWrite: 'new.tsx' }); await f.session.start(f.input());
   await assert.rejects(f.session.apply('one', [{ path: 'page.tsx', before: 'original', after: 'edited' }, { path: 'new.tsx', before: null, after: 'new' }]), /disk write/);

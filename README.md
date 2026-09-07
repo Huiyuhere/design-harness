@@ -16,8 +16,8 @@ inspector or a successful runtime start as evidence of source synchronization.
 | Focus and zoom | Focus replaces other live instances; no fourth iframe. Below 65% zoom, no canvas iframe. Browser fixture covers a 90-frame schedule |
 | Scroll | Window and stable named nested-container offsets saved through a sender-window/origin-checked bridge. Scroll saves do not change the iframe URL. Tested with actual cross-origin browser iframes |
 | Inactive cards | Explicit placeholders until actual thumbnails exist. Imported cards no longer display fabricated page layouts |
-| DOM and visual edits | Real DOM selection, bounded Layers and computed styles. Plain Vite dev scripts support preview-only JSX source anchors and a hash-checked Open JSX action. Unmapped visual/agent writes remain disabled; CSS/style manipulation is not integrated |
-| Source editor | Workspace-bound reads and serialized writes with exact expected-content checks. Source deltas are saved before writes; failed file batches restore previous contents. Runtime-failure/HMR/style validation and full transactional approval remain incomplete |
+| DOM and visual edits | Real DOM selection, bounded Layers and computed styles. Plain Vite dev scripts support preview-only JSX anchors, Open JSX, and a static-text editor with Apply and exact Undo. Unmapped visual/agent writes remain disabled; CSS/style manipulation is not integrated |
+| Source editor | Workspace-bound reads and serialized writes with exact expected-content checks. Static-text Apply/Undo hold the writer queue through a live text/anchor check; errors, cancellation and timeouts restore prior source unless newer work makes rollback unsafe. Raw code edits do not have this render gate. Geometry/style and full transactional approval remain incomplete |
 | Patch adapters | Parsed static JSX/class spans, exact hash-bound forward/inverse patches and CSS declaration guards; unit and real React/HMR fixture tests. These are not proof of the whole inspector/agent path |
 | Agent | Personal-key streaming and approved proposals exist; selected-element execution, durable jobs and cross-workspace application need end-to-end validation |
 | Concurrency | Scheduling primitives are unit-tested. Comprehensive repository-wide write serialization is not yet integrated across every mutation path |
@@ -93,6 +93,28 @@ backup. Deltas are capped at 10 MiB per workspace/revision and storage failure
 blocks the write. Unapplied editor text is not part of the approved journal.
 The product never awards a pixel-verified
 badge from the canvas or from static representations.
+
+### Editing mapped text
+
+In a supported live Vite page, select a static JSX text element, choose **Edit
+text**, then **Apply**. The inspector checks the exact component source and waits
+for its new text and compiler anchor in the selected live frame. A second viewport
+using that component updates through the same dev server; shared components can
+also affect other routes. The warning stays visible before Apply.
+
+The real-WebContainer fixture tests this inspector path, including exact Undo,
+duplicate text, JSX indentation, React state preservation during normal HMR,
+stale source, cancellation, hidden output and a deliberate React runtime error.
+It is not a private repository import or a paid agent test. The text gate is not
+pixel verification and does not prove every affected route. A runtime failure may
+reset React state even when source rollback succeeds.
+
+Only one Undo entry is retained while the text editor remains open. Unapplied
+text and that Undo entry are not durable history. Dynamic or mixed JSX text is
+rejected; existing CSS still determines whether spaces and newlines are visible.
+An unsafe rollback preserves newer source and stops further writes pending
+recovery instead of overwriting it. General style gestures, persistent global
+undo/redo, agent-generated application and production parity remain incomplete.
 
 ## Safety model
 

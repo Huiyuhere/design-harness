@@ -82,5 +82,5 @@ export const startLiveRepositoryPreview = (input: PreviewStart) => session.start
 export const stopLiveRepositoryPreview = () => session.stop();
 export const readLiveSource = (workspaceId: string, path: string) => session.read(workspaceId, path);
 export const writeLiveSource = (workspaceId: string, path: string, content: string, expected: string | null) => session.apply(workspaceId, [{ path, before: expected, after: content }]);
-export const applyLiveSourceChanges = (workspaceId: string, changes: SourceChange[]) => session.apply(workspaceId, changes);
+export const applyLiveSourceChanges = (workspaceId: string, changes: SourceChange[], validate?: (signal: AbortSignal) => Promise<void>) => session.apply(workspaceId, changes, validate);
 export const getLivePreviewDiagnostics = (workspaceId: string) => session.diagnostics(workspaceId);

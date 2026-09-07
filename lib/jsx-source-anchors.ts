@@ -16,6 +16,17 @@ const syntax = (source: string) => { boundedSource(source); return parse(source,
 const elements = (source: string) => [...walk(syntax(source))].filter(node => node.type === 'JSXElement');
 const name = (opening: Node) => { const value = opening.name as Node; return value.type === 'JSXIdentifier' && /^[a-z]/.test(String(value.name)) ? String(value.name) : null; };
 
+// Match JSX compilation whitespace, not CSS layout or raw source indentation.
+function renderedJsxText(value:string) {
+  const lines=value.split(/\r\n|\n|\r/);
+  return lines.map((line,index)=>{
+    let text=line.replace(/\t/g,' ');
+    if(index>0)text=text.replace(/^ +/,'');
+    if(index<lines.length-1)text=text.replace(/ +$/,'');
+    return text;
+  }).filter(Boolean).join(' ');
+}
+
 /** Insert attributes into compiler output only. The authoritative file is untouched. */
 export function instrumentJsxSource(source: string, file: string, hash: string) {
   const edits: Array<{ at: number; text: string }> = [];
@@ -42,7 +53,7 @@ export function inspectJsxAnchor(source: string, untrusted: SourceAnchor) {
   const children = (node.children as Node[]).filter(child => !(child.type === 'JSXExpressionContainer' && (child.expression as Node)?.type === 'JSXEmptyExpression'));
   const child = children.length === 1 ? children[0] : undefined;
   const literal = child?.type === 'JSXText' ? child : child?.type === 'JSXExpressionContainer' && (child.expression as Node)?.type === 'StringLiteral' ? child.expression as Node : undefined;
-  const textTarget = literal ? { start:literal.start, end:literal.end, value:String(literal.value) } : null;
+  const textTarget = literal ? { start:literal.start, end:literal.end, value:String(literal.value), renderedValue:literal.type==='JSXText'?renderedJsxText(String(literal.value)):String(literal.value) } : null;
   return { anchor, textTarget, snippet:source.slice(anchor.start,Math.min(anchor.end,anchor.start+4000)), truncated:anchor.end-anchor.start>4000 };
 }
 
