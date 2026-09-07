@@ -13,6 +13,7 @@ const eslintConfig = defineConfig([
     "dist/**",
     "out/**",
     "build/**",
+    "public/preview-tools/**", // Generated compiler bundle; lint its source in runtime/.
     "next-env.d.ts",
     "worker-configuration.d.ts",
     "outputs/**",

@@ -11,7 +11,7 @@ export function buildPreviewBridge(parentOrigin: string) {
     const finite = v => Number.isFinite(v) ? Math.max(0, v) : 0;
     const send = (type, data = {}) => parent.postMessage({ type: 'agent-harness:' + type, frameId, ...data }, expectedOrigin);
     const generation = crypto.randomUUID(), ids = new WeakMap();
-    let nextId = 1, selected = null, lookup = new Map(), overlay = null, selectionTimer = 0;
+    let nextId = 1, selected = null, lookup = new Map(), overlay = null, selectionTimer = 0, selectionMarker = null;
     const blocked = element => !!element.closest('script,style,noscript,template,input,textarea,select,[hidden],[aria-hidden="true"],[data-private],[data-ah-private],[data-ah-inspector]');
     const idFor = element => { if (!ids.has(element)) ids.set(element, 'n' + nextId++); return ids.get(element); };
     const elementText = element => {
@@ -54,7 +54,9 @@ export function buildPreviewBridge(parentOrigin: string) {
       let selection = null;
       if (selected?.isConnected && !blocked(selected)) {
         const style = getComputedStyle(selected), rect = selected.getBoundingClientRect();
-        selection = { ...layer(selected, null, 0), text: elementText(selected), width: rect.width, height: rect.height,
+        const marker = selected.getAttribute('data-ah-source');
+        selectionMarker = marker;
+        selection = { ...layer(selected, null, 0), text: elementText(selected), width: rect.width, height: rect.height, source: marker && marker.length <= 8192 ? marker : null,
           styles: Object.fromEntries(['display','position','width','height','color','backgroundColor','fontFamily','fontSize','fontWeight','lineHeight','borderRadius','gap','padding','margin'].map(key => [key, String(style[key]).slice(0,2000)])) };
       } else { selected = null; clearInterval(selectionTimer); selectionTimer = 0; }
       highlight(); send('inspection', { inspection: { generation, capturedAt: new Date().toISOString(), layers, selection, truncated } });
@@ -63,8 +65,8 @@ export function buildPreviewBridge(parentOrigin: string) {
       if (blocked(element)) return;
       selected = element; inspect();
       // No full-page MutationObserver or continuous DOM scan. Selection removal
-      // is checked cheaply; a new layer snapshot is explicitly requested.
-      if (!selectionTimer) selectionTimer = setInterval(() => { if (selected && !selected.isConnected) inspect(); }, 1000);
+      // and compiler-marker changes are cheap checks on one selected element.
+      if (!selectionTimer) selectionTimer = setInterval(() => { if (selected && (!selected.isConnected || selected.getAttribute('data-ah-source') !== selectionMarker)) inspect(); }, 1000);
     };
     addEventListener('click', event => {
       if (!initialized || mode !== 'edit' || !(event.target instanceof Element)) return;

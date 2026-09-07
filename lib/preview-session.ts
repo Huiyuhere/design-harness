@@ -2,6 +2,7 @@ import type { FileSystemTree } from '@webcontainer/api';
 import { safeRepositoryPath } from './archive-policy';
 import { validateDraft, type PreviewDraft, type PreviewDraftStore, type SourceChange } from './preview-drafts';
 import { NEXT_ASYNC_CONTEXT_PROBE, NEXT_CONTEXT_ERROR } from './preview-compatibility';
+import { PREVIEW_TOOL_DIRECTORY, VITE_PREVIEW_CONFIG } from './preview-source-tools';
 
 export type LivePreviewStatus = 'idle' | 'downloading' | 'mounting' | 'installing' | 'starting' | 'ready' | 'error';
 export type LivePreviewEvent = { status: LivePreviewStatus; message: string; url?: string };
@@ -32,6 +33,7 @@ type Dependencies = {
   boot(): Promise<PreviewRuntime>;
   download(input: PreviewStart, signal: AbortSignal): Promise<FileSystemTree>;
   bridge(): string; drafts: PreviewDraftStore;
+  sourceTool?(signal: AbortSignal): Promise<string>;
   limits?: { download?: number; install?: number; server?: number };
 };
 const cancelled = () => new DOMException('Preview stopped or workspace changed.', 'AbortError');
@@ -58,7 +60,7 @@ export function previewCommands(files: FileSystemTree) {
   const src = files.src;
   const requiresAsyncContext = nextMajor >= 16 && Boolean(files.app && 'directory' in files.app || src && 'directory' in src && src.directory.app && 'directory' in src.directory.app);
   const startArgs = ['run', 'dev', ...(webpack ? (manager === 'npm' ? ['--', '--webpack'] : ['--webpack']) : [])];
-  return { manager, locked, args, webpack, startArgs, requiresAsyncContext };
+  return { manager, locked, args, webpack, startArgs, requiresAsyncContext, sourceMapping: pkg.scripts.dev.trim() === 'vite' };
 }
 
 /** One serialized lifecycle. Late completions can never mount/write the next repository. */
@@ -103,6 +105,8 @@ export class PreviewSession {
         let files = await this.bounded(session, this.deps.download(input, session.controller.signal), this.deps.limits?.download ?? 120_000, 'Repository download timed out.');
         this.assert(session);
         let commands = previewCommands(files);
+        // Never replace an imported directory, even if it uses our reserved name.
+        const sourceToolCollision = Boolean(files[PREVIEW_TOOL_DIRECTORY]);
         this.emit(session, { status: 'mounting', message: 'Opening the repository…' });
         session.instance = await this.deps.boot(); this.assert(session);
         // API 1.6.1 tree.mount serializes Uint8Array through TextDecoder('latin1'),
@@ -142,6 +146,17 @@ export class PreviewSession {
           if (packageChange) commands = previewCommands({ ...files, 'package.json': { file: { contents: packageChange.after } } });
         }
         this.assert(session);
+        if (commands.sourceMapping && this.deps.sourceTool && !sourceToolCollision) {
+          const tool = await this.bounded(session, this.deps.sourceTool(session.controller.signal), 30_000, 'Preview source tools did not load. Retry the preview.');
+          this.assert(session);
+          if (!tool || new TextEncoder().encode(tool).byteLength > 2 * 1024 * 1024) throw new Error('Invalid preview source tool bundle.');
+          const directory = `/workspaces/${input.workspaceId}/${PREVIEW_TOOL_DIRECTORY}`;
+          await session.instance.fs.mkdir(directory, { recursive:true }); this.assert(session);
+          await session.instance.fs.writeFile(`${directory}/source-plugin.mjs`, tool); this.assert(session);
+          await session.instance.fs.writeFile(`${directory}/vite.config.mjs`, VITE_PREVIEW_CONFIG); this.assert(session);
+          // Preserve the repository's own dev script, config, plugins and hooks.
+          commands.startArgs = ['run','dev', ...(commands.manager === 'npm' ? ['--'] : []), '--config', `${PREVIEW_TOOL_DIRECTORY}/vite.config.mjs`];
+        }
         await session.instance.setPreviewScript(this.deps.bridge()); this.assert(session);
         if (commands.manager !== 'npm') await this.command(session, 'corepack', ['enable'], 30_000);
         this.emit(session, { status: 'installing', message: commands.locked ? 'Installing locked dependencies…' : 'Installing dependencies · no lockfile in this repository' });

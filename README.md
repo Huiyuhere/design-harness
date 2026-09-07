@@ -16,7 +16,7 @@ inspector or a successful runtime start as evidence of source synchronization.
 | Focus and zoom | Focus replaces other live instances; no fourth iframe. Below 65% zoom, no canvas iframe. Browser fixture covers a 90-frame schedule |
 | Scroll | Window and stable named nested-container offsets saved through a sender-window/origin-checked bridge. Scroll saves do not change the iframe URL. Tested with actual cross-origin browser iframes |
 | Inactive cards | Explicit placeholders until actual thumbnails exist. Imported cards no longer display fabricated page layouts |
-| DOM and visual edits | Real imported DOM-to-JSX/CSS anchoring is not integrated. Legacy Design/Layers values describe the demo projection, not trustworthy imported source |
+| DOM and visual edits | Real DOM selection, bounded Layers and computed styles. Plain Vite dev scripts support preview-only JSX source anchors and a hash-checked Open JSX action. Unmapped visual/agent writes remain disabled; CSS/style manipulation is not integrated |
 | Source editor | Workspace-bound reads and serialized writes with exact expected-content checks. Source deltas are saved before writes; failed file batches restore previous contents. Runtime-failure/HMR/style validation and full transactional approval remain incomplete |
 | Patch adapters | Parsed static JSX/class spans, exact hash-bound forward/inverse patches and CSS declaration guards; unit and real React/HMR fixture tests. These are not proof of the whole inspector/agent path |
 | Agent | Personal-key streaming and approved proposals exist; selected-element execution, durable jobs and cross-workspace application need end-to-end validation |
@@ -81,7 +81,7 @@ must be assessed against the table above:
 - a bounded OpenAI Responses API proxy that streams responses and only permits
   inspect/propose tools. The agent cannot apply or publish a patch.
 
-End-to-end private GitHub import, DOM-to-source instrumentation, generated WebP
+End-to-end private GitHub import, general DOM-to-source editing, generated WebP
 thumbnails, screenshot-baseline pixel diffing, HMR geometry/computed-style
 proof, encrypted R2 bundle persistence, and explicit push/PR remain integration
 milestones. Archive imports require a GitHub App connection; dependency execution
@@ -193,7 +193,8 @@ Each result contains a single exact source span with before/after hashes and an
 inverse patch. Replaying on stale or altered text fails closed. Offsets use
 JavaScript UTF-16 units (Babel's convention), not byte offsets. Direct parsing is
 bounded to 1,048,576 source units per file; large files need a different reviewed
-editing path. These helpers are not yet connected to imported DOM selection.
+editing path. A real WebContainer/Vite fixture now connects DOM selection to a
+verified static-text span; full UI/agent approval integration remains incomplete.
 
 The agent's text-approval path now calls the shared JSX planner in the browser
 with Web Crypto hash checks. Edit requests capture a source hash before sending;
@@ -211,6 +212,37 @@ page reload during edits or lost component state. Initial development dependency
 optimization is recorded separately from source-edit navigation. It does **not**
 claim that an API prompt changes a private imported frame, that Tailwind itself
 compiled, or that a production screenshot matches.
+
+### Actual JSX inspection, without a second source tree
+
+For a root `package.json` with an uncustomized `dev: "vite"` script, the preview
+adds a generic compiler plugin in a reserved runtime directory. The original
+Vite configuration, React plugin, custom root, aliases and script hooks remain
+in use. Clean repository files are not instrumented or duplicated. Custom dev
+commands, Next, generated/dynamic DOM and unsupported source remain inspect-only.
+
+Select an element, then use the **Open JSX** code icon. Before opening its actual
+component, the app checks the current file's SHA-256 and exact parsed JSX range.
+Stale selections fail with a refresh instruction, rather than editing matching
+text elsewhere. Source position metadata refreshes after HMR. It is **not**
+proof of CSS mapping, production pixels or a completed agent edit. Imported agent
+requests remain discussion-only until the end-to-end approval path is validated.
+
+The generic tool is about 426 KiB uncompressed. There is one source tree, one
+dev server and no retained full-repository AST. Parsing is bounded per file;
+DOM source markers add per-element overhead. This is not a measured RAM budget.
+Existing runtime-directory collisions are never overwritten. Generated files
+are excluded from source-draft writes; originals and lockfiles remain untouched.
+Compiler markers preserve source lines but do not provide composed debugger
+column source maps. Scripts/styles are not marked; mixed or dynamic text is not
+flattened into directly editable copy.
+
+Run `node scripts/build-preview-tools.mjs` and
+`node --import tsx tests/browser/source-anchors.ts` to reproduce the isolated
+Chromium/WebContainer test. It installs a small public Vite fixture (network
+required), verifies actual selection → component → text patch → HMR → exact
+inverse, and shuts down its own runtime. It neither imports a private repository
+nor invokes a paid API. Build/dev automatically generate the generic tool asset.
 
 ## Preview and production-verification states
 

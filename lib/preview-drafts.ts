@@ -12,7 +12,7 @@ export function validateDraft(draft: PreviewDraft) {
   if (!draft || typeof draft.key !== 'string' || !Array.isArray(draft.files) || draft.files.length > 1000) throw new Error('Invalid saved source draft.');
   for (const file of draft.files) {
     safeRepositoryPath(file.path);
-    if (/^\.github\/workflows\//i.test(file.path) || paths.has(file.path)) throw new Error('Unsafe or duplicate draft file.');
+    if (/^(?:\.github\/workflows\/|\.design-harness-runtime(?:\/|$))/i.test(file.path) || paths.has(file.path)) throw new Error('Unsafe or duplicate draft file.');
     if ((file.before !== null && typeof file.before !== 'string') || typeof file.after !== 'string') throw new Error('Invalid source change.');
     paths.add(file.path);
   }

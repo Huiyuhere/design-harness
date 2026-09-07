@@ -11,7 +11,7 @@ const tree: FileSystemTree = { 'package.json': { file: { contents: '{"scripts":{
 const tick = () => new Promise<void>(resolve => setTimeout(resolve, 0));
 async function until(check: () => boolean) { for (let i = 0; i < 100; i++) { if (check()) return; await tick(); } assert.fail('Expected state did not arrive'); }
 
-function fixture(options: { contextExit?: number; install?: Promise<number>; noReady?: boolean; failSpawn?: boolean; failWrite?: string; mountGate?: Promise<void>; failSave?: boolean; download?: (input: PreviewStart, signal: AbortSignal) => Promise<FileSystemTree>; serverLimit?: number; installLimit?: number } = {}) {
+function fixture(options: { sourceTool?: (signal: AbortSignal) => Promise<string>; contextExit?: number; install?: Promise<number>; noReady?: boolean; failSpawn?: boolean; failWrite?: string; mountGate?: Promise<void>; failSave?: boolean; download?: (input: PreviewStart, signal: AbortSignal) => Promise<FileSystemTree>; serverLimit?: number; installLimit?: number } = {}) {
   const files = new Map<string, string>(); const drafts = new Map<string, PreviewDraft>(); const mounts: string[] = []; const processes: Array<PreviewProcess & { command: string; args: string[]; killed: boolean; end(code: number): void }> = [];
   const listeners = new Set<(port: number, url: string) => void>(); const events: LivePreviewEvent[] = []; const rawWrites = new Map<string, string | Uint8Array>();
   let failWrite = options.failWrite; let saves = 0;
@@ -36,7 +36,7 @@ function fixture(options: { contextExit?: number; install?: Promise<number>; noR
       async rm(path, flags) { for (const key of files.keys()) if (key === path || (flags.recursive && key.startsWith(`${path}/`))) files.delete(key); },
     },
   };
-  const session = new PreviewSession({ boot: async () => instance, download: options.download ?? (async () => structuredClone(tree)), bridge: () => '', limits: { install: options.installLimit ?? 500, server: options.serverLimit ?? 500 }, drafts: {
+  const session = new PreviewSession({ sourceTool:options.sourceTool, boot: async () => instance, download: options.download ?? (async () => structuredClone(tree)), bridge: () => '', limits: { install: options.installLimit ?? 500, server: options.serverLimit ?? 500 }, drafts: {
     async load(key) { return structuredClone(drafts.get(key)); },
     async save(draft) { saves++; if (options.failSave) throw new Error('storage quota'); drafts.set(draft.key, structuredClone(draft)); },
   } });
@@ -48,6 +48,32 @@ test('trust and safe workspace/revision required before any download', async () 
   const f = fixture(); await assert.rejects(f.session.start({ ...f.input(), trusted: false }), /trust/);
   await assert.rejects(f.session.start({ ...f.input(), workspaceId: '../other' }), /safe workspace/);
   await assert.rejects(f.session.start({ ...f.input(), ref: 'main' }), /exact Git SHA/); assert.equal(f.mounts.length, 0);
+});
+test('Vite source tools live only in a reserved generated directory, preserve scripts and are excluded from drafts',async()=>{
+  const f=fixture({sourceTool:async()=> 'export default()=>({name:"test"})'});
+  await f.session.start(f.input());
+  assert.deepEqual(f.processes.at(-1)!.args,['run','dev','--','--config','.design-harness-runtime/vite.config.mjs']);
+  assert.equal(await f.session.read('one','package.json'),'{"scripts":{"dev":"vite"}}');
+  assert.equal(await f.session.read('one','page.tsx'),'original');
+  assert.match(f.files.get('/workspaces/one/.design-harness-runtime/vite.config.mjs')!,/loadConfigFromFile/);
+  assert.throws(()=>f.session.apply('one',[{path:'.design-harness-runtime/source-plugin.mjs',before:null,after:'x'}]),/Unsafe/);
+  assert.equal(f.saves,0);await f.session.stop();assert.equal(f.files.size,0);
+});
+test('custom Vite commands and repository-owned reserved paths remain untouched and unmapped',async()=>{
+  for(const files of [
+    {...tree,'package.json':{file:{contents:'{"scripts":{"dev":"vite --config custom.ts"}}'}}},
+    {...tree,'.design-harness-runtime':{directory:{'source-plugin.mjs':{file:{contents:'original user tool'}}}}},
+  ]){
+    let fetched=0;const f=fixture({download:async()=>files,sourceTool:async()=>{fetched++;return 'tool';}});
+    await f.session.start(f.input());assert.equal(fetched,0);assert.deepEqual(f.processes.at(-1)!.args,['run','dev']);
+    if('.design-harness-runtime' in files)assert.equal(await f.session.read('one','.design-harness-runtime/source-plugin.mjs'),'original user tool');
+    await f.session.stop();
+  }
+});
+test('source-tool failure cleans the runtime and never starts dependencies',async()=>{
+  const f=fixture({sourceTool:async()=>{throw Error('source tools unavailable');}});
+  await assert.rejects(f.session.start(f.input()),/source tools unavailable/);
+  assert.equal(f.files.size,0);assert.equal(f.processes.length,0);
 });
 test('Next App Router checks request context before transferring source or installing dependencies', async () => {
   const files: FileSystemTree = { 'package.json': { file: { contents: '{"scripts":{"dev":"next dev"},"dependencies":{"next":"16.2.10"}}' } }, app:{directory:{'page.jsx':{file:{contents:'export default()=> <h1>Page</h1>'}}}} };

@@ -6,6 +6,7 @@ import { MAX_ARCHIVE_BYTES, MAX_EXPANDED_BYTES, MAX_FILE_BYTES, MAX_ARCHIVE_FILE
 import { buildPreviewBridge } from './preview-bridge';
 import { PreviewSession, type PreviewStart } from './preview-session';
 import { browserPreviewDrafts, type SourceChange } from './preview-drafts';
+import { PREVIEW_TOOL_ASSET } from './preview-source-tools';
 
 export type { LivePreviewStatus, LivePreviewEvent } from './preview-session';
 
@@ -71,7 +72,12 @@ async function downloadRepository(input: PreviewStart, signal: AbortSignal) {
   signal.throwIfAborted(); return repositoryArchiveToTree(bytes);
 }
 
-const session = new PreviewSession({ boot: container, download: downloadRepository, bridge: () => buildPreviewBridge(location.origin), drafts: browserPreviewDrafts });
+export async function loadPreviewSourceTool(signal: AbortSignal) {
+  const response = await fetch(PREVIEW_TOOL_ASSET, { signal });
+  if (!response.ok || !response.body) throw new Error('Preview source tools are unavailable. Reload Design Harness.');
+  return new Response(boundedStream(response.body, 2 * 1024 * 1024)).text();
+}
+const session = new PreviewSession({ boot: container, download: downloadRepository, bridge: () => buildPreviewBridge(location.origin), drafts: browserPreviewDrafts, sourceTool: loadPreviewSourceTool });
 export const startLiveRepositoryPreview = (input: PreviewStart) => session.start(input);
 export const stopLiveRepositoryPreview = () => session.stop();
 export const readLiveSource = (workspaceId: string, path: string) => session.read(workspaceId, path);

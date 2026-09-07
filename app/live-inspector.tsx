@@ -4,10 +4,11 @@ import { Code2, Copy, Layers3, MousePointer2, RefreshCw, ShieldCheck } from 'luc
 import { useState } from 'react';
 import { IconControl } from './canvas-controls';
 import type { PreviewInspection } from '../lib/preview-inspection';
+import type { SourceAnchor } from '../lib/source-anchor';
 
 export function LiveInspector({ tab, inspection, available, onRefresh, onSelect, onSource, onDiscuss }: {
   tab: 'design' | 'layers'; inspection: PreviewInspection | null; available: boolean;
-  onRefresh(): void; onSelect(id: string, generation: string): void; onSource(): void; onDiscuss(): void;
+  onRefresh(): void; onSelect(id: string, generation: string): void; onSource(anchor?: SourceAnchor): void; onDiscuss(): void;
 }) {
   const [copyStatus, setCopyStatus] = useState('');
   const selected = inspection?.selection;
@@ -28,8 +29,8 @@ export function LiveInspector({ tab, inspection, available, onRefresh, onSelect,
         {selected.text && <section className="live-inspector-copy"><header><span>Text</span><IconControl floating label="Copy element text" explanation="Copy the selected element’s visible text, not its source code." onClick={() => { void navigator.clipboard.writeText(selected.text).then(() => setCopyStatus('Copied'), () => setCopyStatus('Copy unavailable')); }}><Copy size={15} aria-hidden="true" /></IconControl></header><pre>{selected.text}</pre><span role="status">{copyStatus}</span></section>}
         <dl className="live-style-values">{pairs.slice(0, 6).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
         <details className="live-more-styles"><summary>More styles</summary><dl className="live-style-values">{pairs.slice(6).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>
-        <button className="live-discuss" onClick={onDiscuss}>Discuss element</button>
+        <div className="live-inspector-tools"><button className="live-discuss" onClick={onDiscuss}>Discuss element</button>{selected.source && <IconControl floating label="Open JSX" explanation="Check the source hash and open this element’s actual component. This does not apply an edit." onClick={() => onSource(selected.source!)}><Code2 size={17} aria-hidden="true" /></IconControl>}</div>
       </> : <div className="live-inspector-empty"><MousePointer2 size={24} aria-hidden="true" /><p>Select an element in Edit mode.</p></div>}
-    <details className="inspection-source-note"><summary><ShieldCheck size={14} aria-hidden="true" />Inspect only</summary><p>These are real DOM values. A verified JSX/CSS mapping is not available yet, so visual edits are disabled. The route file is not necessarily the selected component.</p><button onClick={onSource} disabled={!available}>Open route source</button></details>
+    <details className="inspection-source-note"><summary><ShieldCheck size={14} aria-hidden="true" />Inspect only</summary><p>{selected?.source ? 'Open JSX checks this element against the current component file. Visual style editing is not supported yet.' : 'These are real DOM values. This element has no supported source marker, so visual edits are disabled. The route file may not be the selected component.'}</p><button onClick={() => onSource()} disabled={!available}>Open route source</button></details>
   </div>;
 }

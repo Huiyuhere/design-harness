@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { decodeSourceAnchor } from './source-anchor';
 
 export const INSPECTION_LIMIT = 200;
 const nodeId = z.string().regex(/^n[1-9][0-9]{0,8}$/);
@@ -11,7 +12,7 @@ const properties = z.object({
 export const inspectionSchema = z.object({
   generation: z.string().uuid(), capturedAt: z.string().datetime(), truncated: z.boolean(),
   layers: z.array(layer).max(INSPECTION_LIMIT),
-  selection: layer.extend({ text, styles: properties, width: z.number().finite().min(0).max(1e7), height: z.number().finite().min(0).max(1e7) }).nullable(),
+  selection: layer.extend({ text, styles: properties, width: z.number().finite().min(0).max(1e7), height: z.number().finite().min(0).max(1e7), source: z.unknown().transform(decodeSourceAnchor) }).nullable(),
 }).superRefine((value, ctx) => {
   const seen = new Set<string>();
   for (const node of value.layers) {
