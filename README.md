@@ -195,9 +195,20 @@ JavaScript UTF-16 units (Babel's convention), not byte offsets. Direct parsing i
 bounded to 1,048,576 source units per file; large files need a different reviewed
 editing path. These helpers are not yet connected to imported DOM selection.
 
-`test:patcher` uses actual helper output, an isolated synthetic React fixture,
-Vite HMR and headless Chromium to verify literal text, button rounding, computed
-CSS and exact undo without a page reload or lost component state. It does **not**
+The agent's text-approval path now calls the shared JSX planner in the browser
+with Web Crypto hash checks. Edit requests capture a source hash before sending;
+approval rejects missing snapshots and subsequent file changes. A final
+compare-before-write still runs inside the serialized preview session. Literal
+navigation edits use parsed anchors or recognized Next/React Router imports;
+spread, dynamic and ambiguous props are refused. This is not yet proof that the
+canvas selected the correct imported DOM node, that a new route has rendered, or
+that the full agent-to-frame interaction works. UI undo/redo remains unfinished.
+
+`test:patcher` runs the browser agent helper in Chromium, then uses its actual
+output in an isolated synthetic React fixture with Vite HMR. It checks literal
+text, href updates, button rounding, computed CSS and exact inverses, with no
+page reload during edits or lost component state. Initial development dependency
+optimization is recorded separately from source-edit navigation. It does **not**
 claim that an API prompt changes a private imported frame, that Tailwind itself
 compiled, or that a production screenshot matches.
 

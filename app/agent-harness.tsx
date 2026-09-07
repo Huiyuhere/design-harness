@@ -48,26 +48,6 @@ function nextRouteSourcePath(sourceFile: string, route: string) {
   if (pagesMatch) return `${pagesMatch[1]}${safeRoute(route)}.${extension}`.replace(/\/+/g, "/");
   return null;
 }
-function linkSourceControl(source: string, label: string, route: string) {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const candidates = [
-    { expression: new RegExp(`<a\\b([^>]*)>${escaped}</a>`, "g"), attribute: "href" },
-    { expression: new RegExp(`<Link\\b([^>]*)>${escaped}</Link>`, "g"), attribute: "href" },
-    { expression: new RegExp(`<NavLink\\b([^>]*)>${escaped}</NavLink>`, "g"), attribute: "to" },
-  ];
-  for (const candidate of candidates) {
-    const matches = [...source.matchAll(candidate.expression)];
-    if (matches.length !== 1) continue;
-    const full = matches[0][0]; const attributes = matches[0][1];
-    const nextAttributes = new RegExp(`\\s${candidate.attribute}=(?:"[^"]*"|'[^']*')`).test(attributes)
-      ? attributes.replace(new RegExp(`(\\s${candidate.attribute}=)(?:"[^"]*"|'[^']*')`), `$1"${route}"`)
-      : `${attributes} ${candidate.attribute}="${route}"`;
-    const output = source.replace(full, full.replace(attributes, nextAttributes));
-    parse(output, { sourceType: "module", plugins: ["jsx", "typescript"] });
-    return output;
-  }
-  throw new Error(`Could not safely map “${label}” to one <a>, <Link>, or <NavLink> source node. The route remains unapplied.`);
-}
 function generatedRouteSource(patch: Extract<AgentDesignJob["patch"], { operation: "create_route" }>) {
   const name = `Generated${patch.pageName.replace(/[^A-Za-z0-9]/g, "") || "Route"}Page`;
   return `export default function ${name}() {\n  return (\n    <main>\n      <p>{${JSON.stringify(patch.eyebrow)}}</p>\n      <h1>{${JSON.stringify(patch.headline)}}</h1>\n      <p>{${JSON.stringify(patch.supporting)}}</p>\n      <a href="/">{${JSON.stringify(patch.primaryAction)}}</a>\n    </main>\n  );\n}\n`;
@@ -489,6 +469,15 @@ export function AgentHarness() {
     const job: AgentDesignJob = { id: jobId, workspaceId: workspace.id, frameId: selectedSpec.id, sourceRouteId, scopeKey, frameName: selectedSpec.name, route: selectedSpec.route, node: selectedNode, nodeLabel: selectedMeta.label, sourceFile: selectedSpec.sourceFile, gapId: gapId ?? undefined, before: selectedContent, prompt, intent: agentIntent, status: "thinking", reply: "", createdAt: now() };
     agentControllers.current.set(jobId, controller); mutateAgentJobs((items) => [job, ...items].slice(0, 30)); setActiveAgentJobId(jobId); setComposer(""); setAttachedGap(null);
     try {
+      if (job.intent === 'edit') {
+        if (!job.sourceFile || !activeLiveUrl) throw new Error('Start the repository preview and select a mapped source file before requesting an edit.');
+        const { readLiveSource } = await import('../lib/live-preview-client');
+        const source = await readLiveSource(job.workspaceId, job.sourceFile);
+        const expectedSourceHash = await sha256(source);
+        controller.signal.throwIfAborted();
+        if (activeWorkspaceRef.current !== job.workspaceId) throw new Error('Workspace changed before the source snapshot was ready. No prompt was sent.');
+        mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, expectedSourceHash } : item));
+      }
       const response = await fetch("/api/agent", { method: "POST", signal: controller.signal, headers: { "Content-Type": "application/json" }, body: JSON.stringify({ project: projectPayload, threadId: `design-${workspace.id}-${sourceRouteId}`, prompt, intent: agentIntent, model: "gpt-5.4-mini", attachedGapId: gapId, contextReceipt: { frames: [selectedSpec.id], files: [selectedSpec.sourceFile ?? (selectedSpec.route === "/" ? "app/page.tsx" : `app${selectedSpec.route}/page.tsx`), ...(workspace.brand.documents ?? []).map((document) => document.path)], computedStyles: [`font-size:${cssSize(selectedStyle)}`, `color:${selectedStyle.color}`, `font-family:${selectedStyle.font}`], memoryIds: workspace.brand.sourceFiles, decisionIds: ["route-state-isolated", "source-is-truth", ...activeGaps.map((gap) => `flow-gap:${gap.frameId}:${gap.node}`)], target: { frameId: selectedSpec.id, sourceRouteId, scopeKey, route: selectedSpec.route, node: selectedNode, label: selectedMeta.label, currentText: selectedContent, sourceFile: selectedSpec.sourceFile } } }) });
       if (!response.ok || !response.body) { const payload = await response.json().catch(() => ({ error: "Agent request failed." })) as { error?: string }; if (response.status === 401) { setKeyStatus({ loading: false, connected: false, models: [] }); setKeyModal(true); } throw new Error(payload.error ?? "Agent request failed."); }
       const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffer = ""; let output = ""; let receipt: AgentReceipt | undefined;
@@ -509,13 +498,17 @@ export function AgentHarness() {
     if (conflictingApply) { setToast(`Another patch is writing ${job.scopeKey}. This edit remains ready.`); window.setTimeout(() => setToast(null), 2600); return; }
     mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "applying" } : item));
     try {
+      if (!job.expectedSourceHash) throw new Error('This proposal has no request-time source snapshot. Generate a new proposal before applying.');
       if (job.patch.operation === "create_route") {
         const route = safeRoute(job.patch.route); const stamp = now();
         const sourceVariants = workspace.frames.filter((frame) => frameRouteIdentity(frame) === job.sourceRouteId);
         const existingTargets = workspace.frames.filter((frame) => frame.route === route);
         if (job.sourceFile && activeLiveUrl) {
           const { readLiveSource, applyLiveSourceChanges } = await import("../lib/live-preview-client");
-          const source = await readLiveSource(job.workspaceId, job.sourceFile); const linkedSource = linkSourceControl(source, job.before, route);
+          const source = await readLiveSource(job.workspaceId, job.sourceFile);
+          if (await sha256(source) !== job.expectedSourceHash) throw new Error('Source changed after this proposal. Generate a new edit before applying.');
+          const { prepareBrowserLinkPatch } = await import('../lib/browser-source-patcher');
+          const linkedSource = (await prepareBrowserLinkPatch(source, job.before, route, job.expectedSourceHash)).output;
           const changes: Array<{ path: string; before: string | null; after: string }> = [];
           if (!existingTargets.length) {
             const targetPath = nextRouteSourcePath(job.sourceFile, route);
@@ -558,9 +551,11 @@ export function AgentHarness() {
         return;
       }
       if (job.sourceFile && activeLiveUrl) {
-        const { readLiveSource, writeLiveSource } = await import("../lib/live-preview-client"); const source = await readLiveSource(job.workspaceId, job.sourceFile); const anchor = `>${job.before}<`;
-        if (source.split(anchor).length !== 2) throw new Error("The selected text is no longer unique in the source. Open Code to reconcile it safely.");
-        const output = source.replace(anchor, `>${job.patch.after}<`); parse(output, { sourceType: "module", plugins: ["jsx", "typescript"] }); await writeLiveSource(job.workspaceId, job.sourceFile, output, source);
+        const { readLiveSource, writeLiveSource } = await import("../lib/live-preview-client");
+        const { prepareBrowserTextPatch } = await import('../lib/browser-source-patcher');
+        const source = await readLiveSource(job.workspaceId, job.sourceFile);
+        const prepared = await prepareBrowserTextPatch(source, job.before, job.patch.after, job.expectedSourceHash);
+        await writeLiveSource(job.workspaceId, job.sourceFile, prepared.output, source);
       }
       updateNodeContent(job.frameId, job.node as TextNodeKey, job.patch.after, job.before); mutateAgentJobs((items) => items.map((item) => item.id === jobId ? { ...item, status: "applied" } : item));
       if (activeWorkspaceRef.current === job.workspaceId) { centerFrame(job.frameId); setToast(`${job.nodeLabel} source saved · preview not verified`); window.setTimeout(() => setToast(null), 2400); }

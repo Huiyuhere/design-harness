@@ -16,6 +16,7 @@ export type AgentDesignJob = {
   node: string;
   nodeLabel: string;
   sourceFile?: string;
+  expectedSourceHash?: string;
   gapId?: string;
   before: string;
   prompt: string;
