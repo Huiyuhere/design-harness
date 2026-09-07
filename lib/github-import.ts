@@ -15,8 +15,11 @@ export function githubHeaders(token: string, raw = false) {
   return { Accept: raw ? "application/vnd.github.raw+json" : "application/vnd.github+json", Authorization: `Bearer ${token}`, "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "design-harness" };
 }
 
-async function checkedResponse(url: string, token: string, raw = false) {
-  const response = await fetch(url, { headers: githubHeaders(token, raw), signal: AbortSignal.timeout(30_000), cache: "no-store" });
+async function checkedResponse(url: string, token: string, raw = false, options: { signal?: AbortSignal; timeoutMs?: number } = {}) {
+  options.signal?.throwIfAborted();
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? 30_000);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+  const response = await fetch(url, { headers: githubHeaders(token, raw), signal, cache: "no-store", redirect: "follow" });
   if (response.ok) return response;
   await response.body?.cancel();
   const reset = Number(response.headers.get("x-ratelimit-reset"));
@@ -29,6 +32,12 @@ async function checkedResponse(url: string, token: string, raw = false) {
   if (response.status === 404) throw new GitHubImportError("Repository or source not accessible. Check that this exact repository is selected in the GitHub App installation.", 404, true);
   if (response.status === 403) throw new GitHubImportError("GitHub denied access. Check the installation's selected repositories and any organization approval requirements.", 403, true);
   throw new GitHubImportError(`GitHub could not complete the import (${response.status}). Retry later.`, 502);
+}
+
+/** Same error semantics as discovery; the archive body remains a stream. */
+export function fetchGitHubArchive(owner: string, repository: string, sha: string, token: string, signal?: AbortSignal) {
+  if (!COMMIT_SHA.test(sha)) throw new GitHubImportError("Select an exact Git commit before downloading.", 400);
+  return checkedResponse(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repository)}/zipball/${sha}`, token, false, { signal, timeoutMs: 120_000 });
 }
 
 // Count bytes while reading, not after allocating an unbounded response string.
