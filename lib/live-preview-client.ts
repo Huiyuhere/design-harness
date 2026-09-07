@@ -7,6 +7,7 @@ import { buildPreviewBridge } from './preview-bridge';
 import { PreviewSession, type PreviewStart } from './preview-session';
 import { browserPreviewDrafts, type SourceChange } from './preview-drafts';
 import { PREVIEW_TOOL_ASSET } from './preview-source-tools';
+import { hasLocalPreview, startLocalPreview, stopLocalPreview, readLocalSource, applyLocalSource } from './local-preview-client';
 
 export type { LivePreviewStatus, LivePreviewEvent } from './preview-session';
 
@@ -78,9 +79,9 @@ export async function loadPreviewSourceTool(signal: AbortSignal) {
   return new Response(boundedStream(response.body, 2 * 1024 * 1024)).text();
 }
 const session = new PreviewSession({ boot: container, download: downloadRepository, bridge: () => buildPreviewBridge(location.origin), drafts: browserPreviewDrafts, sourceTool: loadPreviewSourceTool });
-export const startLiveRepositoryPreview = (input: PreviewStart) => session.start(input);
-export const stopLiveRepositoryPreview = () => session.stop();
-export const readLiveSource = (workspaceId: string, path: string) => session.read(workspaceId, path);
-export const writeLiveSource = (workspaceId: string, path: string, content: string, expected: string | null) => session.apply(workspaceId, [{ path, before: expected, after: content }]);
-export const applyLiveSourceChanges = (workspaceId: string, changes: SourceChange[], validate?: (signal: AbortSignal) => Promise<void>) => session.apply(workspaceId, changes, validate);
+export const startLiveRepositoryPreview = async (input: PreviewStart) => { if(hasLocalPreview(input.workspaceId)){await session.stop();return startLocalPreview(input);}return session.start(input); };
+export const stopLiveRepositoryPreview = () => Promise.all([session.stop(),stopLocalPreview()]);
+export const readLiveSource = (workspaceId: string, path: string) => hasLocalPreview(workspaceId)?readLocalSource(workspaceId,path):session.read(workspaceId, path);
+export const writeLiveSource = (workspaceId: string, path: string, content: string, expected: string | null) => applyLiveSourceChanges(workspaceId,[{path,before:expected,after:content}]);
+export const applyLiveSourceChanges = (workspaceId: string, changes: SourceChange[], validate?: (signal: AbortSignal) => Promise<void>) => hasLocalPreview(workspaceId)?applyLocalSource(workspaceId,changes,validate):session.apply(workspaceId, changes, validate);
 export const getLivePreviewDiagnostics = (workspaceId: string) => session.diagnostics(workspaceId);

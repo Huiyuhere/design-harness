@@ -8,10 +8,59 @@ inspector or a successful runtime start as evidence of source synchronization.
 
 ## Current implementation and evidence
 
+### Local Node companion
+
+This optional runner is intended to connect a **separate, trusted Git working
+copy** to the existing hosted canvas. It does not upload the copy to a new cloud
+provider or push changes to GitHub. It is **not an OS sandbox**: repository code
+runs with your user account's filesystem/network privileges.
+
+Prerequisites: Node 22.13+, the Design Harness dependencies, and the imported
+application's dependencies already installed in that working copy. Currently
+only standard `next dev` (Webpack) and `vite` scripts are supported. Custom
+scripts, automatic cloning/installing and remote runners are not implemented.
+Keep at least 2 GiB free to start; 5 GiB or more is recommended during development.
+
+```sh
+pnpm companion --source /absolute/path/to/disposable-clone --trust-local-code
+```
+
+In the matching GitHub-imported workspace, choose **Run preview**, enter the
+one-use code, then **Connect & run**. Allow Chrome's loopback/local-network
+permission. The repository URL and full Git SHA must match. Working-copy changes
+are disclosed separately. Close with **Stop preview** or Ctrl+C in the terminal.
+Restart the companion for a new pairing code after refreshing the Site.
+
+- Control is bound to `127.0.0.1:4877`, exposed as `http://localhost:4877`, with
+  strict Host/Origin checks and a memory-only paired control token.
+- Preview is bound to `127.0.0.1:4878`; a Secure, HttpOnly, partitioned cookie
+  authorizes the iframe. It is never forwarded to the imported application.
+- One native server uses port 4879. The existing one-to-three live-frame cap
+  remains; no runtime/dependency copy is created per responsive frame.
+- Browser source actions are restricted to the paired working copy. Secrets,
+  workflow files, dependency trees, symlinks and configuration files are excluded.
+  Source transactions check exact previous bytes, validate syntax, journal the
+  pending changes and support rollback. This is not Git publishing or backup.
+- This first adapter adds **rendering, inspection and raw source editing**.
+  Native Next.js DOM-to-JSX instrumentation, AI-applied element edits and
+  production pixel verification are **not proven**. Do not enable unmapped edits
+  or claim that a server-ready response proves the frame rendered correctly.
+
+Validation: 128 unit tests, TypeScript and the Site build passed. A controlled
+HTTPS-parent/real-loopback Chromium test passed pairing, cookie protection,
+iframe/bridge readiness, standards-mode rendering and scroll restoration.
+The native acceptance working copy loaded all five routes through this proxy,
+including client-mounted onboarding, with fonts loaded and no page exceptions.
+Cached startup took 5.1 seconds; sequential desktop route checks took 0.6–1.5
+seconds each. These are controlled-browser working-copy results, not cold-install,
+production parity, all responsive states or an authenticated hosted-user test.
+
+### Existing capabilities
+
 | Area | Current state |
 | --- | --- |
 | Setup and shell | Compact GitHub/AI onboarding and named toolbar hints. Connection dialogs use native keyboard modality, Escape and focus return; privacy and cost details expand on demand |
-| GitHub import | Private App flow, read-scoped installation tokens and immutable-SHA archive/metadata inspection; unit-tested, live selected-repository acceptance still outstanding |
+| GitHub import | Private App flow and read-scoped installation tokens. Finite's private metadata import discovered five routes at a pinned SHA in the hosted Site; complete browser archive/runtime acceptance is a separate check |
 | Live pages | Actual application iframes, not headless captures; one selected frame by default, explicit pins up to three |
 | Focus and zoom | Focus replaces other live instances; no fourth iframe. Below 65% zoom, no canvas iframe. Browser fixture covers a 90-frame schedule |
 | Scroll | Window and stable named nested-container offsets saved through a sender-window/origin-checked bridge. Scroll saves do not change the iframe URL. Tested with actual cross-origin browser iframes |

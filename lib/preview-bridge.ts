@@ -145,6 +145,12 @@ export function buildPreviewBridge(parentOrigin: string) {
       if (['edit','prototype','graph'].includes(event.data.mode)) mode = event.data.mode;
       const scroll = event.data.scroll || {};
       if (document.readyState === 'loading') await new Promise(resolve => document.addEventListener('DOMContentLoaded', resolve, { once: true }));
+      // Async application bundles can still be loading after DOMContentLoaded.
+      // Bound this wait: an unavailable third-party asset must not hang the bridge.
+      if (document.readyState !== 'complete') await new Promise(resolve => {
+        const finish=()=>{clearTimeout(timeout);removeEventListener('load',finish);resolve();};
+        const timeout=setTimeout(finish,10000);addEventListener('load',finish,{once:true});
+      });
       if (document.fonts) await Promise.race([document.fonts.ready, new Promise(resolve => setTimeout(resolve, 1500))]);
       // Offscreen/hidden iframes may pause animation frames. Readiness must not
       // wait forever merely because this comparison sits below the viewport.

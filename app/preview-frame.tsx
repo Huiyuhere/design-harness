@@ -48,7 +48,7 @@ function LiveFrame({ baseUrl, route, frameId, title, scroll, style, onScroll, on
     window.addEventListener('message', onMessage);
     return () => { clearTimeout(timer); clearTimeout(timeout); window.removeEventListener('message', onMessage); };
   }, [src, expectedOrigin, frameId]);
-  return <><iframe ref={iframe} title={title} data-live-frame-id={frameId} src={src} allow="cross-origin-isolated" style={style}
+  return <><iframe ref={iframe} title={title} data-live-frame-id={frameId} src={src} allow="cross-origin-isolated; loopback-network" style={style}
     onLoad={initialize} />
     {status && <div className={`frame-runtime-feedback ${error ? 'error' : ''}`} role={error ? 'alert' : 'status'}>{error ? <><div className="frame-error-title"><AlertCircle size={16} aria-hidden="true" /><strong>Preview needs attention</strong><button type="button" onClick={onRetry} aria-label={`Retry ${title} preview`}><RotateCw size={14} aria-hidden="true" />Retry</button></div><details><summary>Details</summary><p>{status}</p></details></> : status}</div>}</>;
 }
