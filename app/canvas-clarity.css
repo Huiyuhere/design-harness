@@ -74,3 +74,23 @@
 .frame-runtime-feedback summary { cursor: pointer; margin-top: 5px; }
 .frame-runtime-feedback p { margin: 8px 0 0; max-height: 160px; overflow: auto; }
 .workspace-status[data-running=false] span i { background: #989da5; }
+
+/* The native dialog supplies focus containment and an inert background. */
+dialog.canvas-dialog { margin: 0; width: 100%; max-width: none; height: 100%; max-height: none; border: 0; color: inherit; box-sizing: border-box; }
+dialog.canvas-dialog:not([open]) { display: none; }
+dialog.canvas-dialog::backdrop { background: transparent; }
+dialog.canvas-dialog > .canvas-dialog-dismiss { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; border: 0; padding: 0; background: transparent; }
+dialog.canvas-dialog > .workspace-modal { position: relative; z-index: 1; }
+.canvas-dialog .workspace-modal header p, .canvas-dialog .modal-body, .canvas-dialog .modal-body label > span { font-size: 14px; line-height: 1.5; }
+.canvas-dialog .modal-body label input:not([type=checkbox]) { font-size: 16px; }
+.canvas-dialog .modal-tabs button, .canvas-dialog .workspace-modal footer button { min-height: 40px; height: auto; font-size: 14px; }
+.canvas-dialog .workspace-modal header > button { width: 32px; height: 32px; }
+.canvas-dialog .trust-check span { font-size: 14px !important; }
+.canvas-dialog .import-github-access strong, .canvas-dialog .import-github-access a { font-size: 14px; }
+.canvas-dialog .import-github-access span { font-size: 13px; }
+.canvas-dialog .key-success strong { font-size: 14px; }
+.canvas-dialog .key-success span, .canvas-dialog .key-success small { font-size: 12px; }
+.key-privacy { border: 1px solid #e5e5e5; border-radius: 10px; padding: 12px; color: #62666c; font-size: 14px; line-height: 1.5; }
+.key-privacy summary { cursor: pointer; color: #373b41; }
+.key-privacy p { margin: 10px 0 0; }
+.key-privacy summary:focus-visible, dialog.canvas-dialog button:focus-visible { outline: 2px solid #315efb; outline-offset: 3px; }

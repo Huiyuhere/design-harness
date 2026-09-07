@@ -10,7 +10,7 @@ inspector or a successful runtime start as evidence of source synchronization.
 
 | Area | Current state |
 | --- | --- |
-| Setup and shell | Compact GitHub/AI onboarding and accessible toolbar hints; browser-tested at desktop, tablet and mobile widths |
+| Setup and shell | Compact GitHub/AI onboarding and named toolbar hints. Connection dialogs use native keyboard modality, Escape and focus return; privacy and cost details expand on demand |
 | GitHub import | Private App flow, read-scoped installation tokens and immutable-SHA archive/metadata inspection; unit-tested, live selected-repository acceptance still outstanding |
 | Live pages | Actual application iframes, not headless captures; one selected frame by default, explicit pins up to three |
 | Focus and zoom | Focus replaces other live instances; no fourth iframe. Below 65% zoom, no canvas iframe. Browser fixture covers a 90-frame schedule |
@@ -93,6 +93,29 @@ backup. Deltas are capped at 10 MiB per workspace/revision and storage failure
 blocks the write. Unapplied editor text is not part of the approved journal.
 The product never awards a pixel-verified
 badge from the canvas or from static representations.
+
+### Browser audits on macOS
+
+The browser scripts use a separate headless Chrome instance and synthetic source;
+they do not connect a private repository or spend AI credits. Run the onboarding
+audit against the local app at `http://localhost:8790`. Evidence is written under
+the ignored `outputs/audit` directory; do not publish private audit artifacts.
+
+```sh
+node --import tsx tests/browser/onboarding.ts
+node --import tsx tests/browser/webcontainer-memory.ts --smoke
+node --import tsx tests/browser/webcontainer-memory.ts
+node --import tsx tests/browser/scaled-pointer.ts
+```
+
+The full memory run takes over 20 minutes, uses keyboard selection and actual
+inspector Apply/Undo, and compares one/two/three responsive frames. RSS includes
+shared runtime workers and is not physical footprint or a per-frame allocation.
+The final test teardown unloads WebContainer explicitly; normal product stop
+retains its booted instance for reuse. The pointer diagnostic contrasts locator
+automation with measured screen-coordinate input and intentionally reports
+failed locator cases rather than masking them. Neither audit certifies production
+pixels, the private import path or arbitrary device/browser behavior.
 
 ### Editing mapped text
 

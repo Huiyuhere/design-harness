@@ -12,14 +12,16 @@ import type { SourceAnchor } from '../../lib/source-anchor';
 import { verifyJsxSourceAnchor } from '../../lib/jsx-source-anchors';
 import { prepareBrowserTextPatch, applyBrowserSourcePatch } from '../../lib/browser-source-patcher';
 import type {TextEditorIO} from '../../lib/mapped-text-editor';
+import type {ScrollSnapshot} from '../../lib/frame-runtime';
 import '../../app/globals.css';
 
 const id='source-anchor-regression';
+const memoryMode=new URLSearchParams(location.search).has('memory');
 const action=`import React,{useState} from 'react';
 export default function Action(){const [count,setCount]=useState(0);React.useLayoutEffect(()=>{if(document.querySelector('#action')?.textContent==='Trigger render error')throw Error('Intentional source render failure');});return <section><h1>Start</h1><button id="action" onClick={()=>setCount(count+1)}>Start</button><output>{count}</output><p id="formatted">
   Hello
   world
-</p></section>}`;
+</p>${memoryMode?`<div id="nested" style={{height:160,overflow:'auto'}}><div style={{height:1600}}>Nested scroll fixture</div></div><div style={{height:2400}}>{Array.from({length:150},(_,index)=><p key={index}>Fixture row {index}</p>)}</div>`:''}</section>}`;
 const pkg=JSON.stringify({name:id,private:true,type:'module',scripts:{predev:'node -e "require(\'fs\').writeFileSync(\'predev.txt\',\'preserved\')"',dev:'vite'},dependencies:{vite:'6.4.1','@vitejs/plugin-react':'4.7.0',react:'19.2.6','react-dom':'19.2.6'}});
 let runtime:WebContainer|undefined, snapshot:PreviewInspection|null=null;
 const events:unknown[]=[];
@@ -55,16 +57,24 @@ const api={
 declare global {interface Window { anchorTest:typeof api }}
 window.anchorTest=api;
 function Fixture(){
+  const [liveCount,setLiveCount]=useState(new URLSearchParams(location.search).has('editor')?2:1),[scrolls,setScrolls]=useState<Record<string,ScrollSnapshot>>({});
+  const saveScroll=(frameId:string,value:ScrollSnapshot)=>setScrolls(prior=>({...prior,[frameId]:value}));
   const [url,setUrl]=useState(''),[status,setStatus]=useState('Ready'),[inspection,setInspection]=useState<PreviewInspection|null>(null),[mode,setMode]=useState<'edit'|'prototype'>('edit'),[sequence,setSequence]=useState(0),[opened,setOpened]=useState(''),[error,setError]=useState('');
   const open=async(anchor?:SourceAnchor)=>{if(!anchor)return;try{const text=await session.read(id,anchor.file);await verifyJsxSourceAnchor(text,anchor);setOpened(`${anchor.file}:${anchor.line}\n${text.slice(anchor.start,anchor.end)}`);setError('');}catch(error){setError(String(error));}};
   return <main style={{padding:24,fontFamily:'system-ui'}}><h1>Live JSX source audit</h1><p>This is a synthetic Vite test, not Finite import acceptance.</p>
     <button onClick={()=>void session.start({workspaceId:id,repositoryUrl:'https://github.com/example/source-anchor-regression',ref:'b'.repeat(40),trusted:true,onEvent:event=>{events.push(event);setStatus(event.message);if(event.url)setUrl(event.url);}}).catch(error=>setError(String(error)))}>Start browser runtime</button>
-    <p role="status">{status}</p><button onClick={()=>setMode(mode==='edit'?'prototype':'edit')}>{mode==='edit'?'Interact':'Select'}</button>
-    <div style={{display:'grid',gridTemplateColumns:'1fr 350px',gap:20}}>
-      <div style={{position:'relative'}}>{url&&<PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="action" title="Mapped Vite preview" mode={mode} onScroll={()=>{}} inspectCommand={{sequence}} onInspection={value=>{snapshot=value;setInspection(value);}} style={{width:'100%',height:500}}/>}</div>
+    <p role="status">{status}</p>{!memoryMode&&<button onClick={()=>setMode(mode==='edit'?'prototype':'edit')}>{mode==='edit'?'Interact':'Select'}</button>}
+    {memoryMode&&<header style={{position:'sticky',top:0,zIndex:20,background:'white',padding:12,display:'flex',gap:16}}>
+      {[0,1,2,3].map(count=><button key={count} aria-pressed={liveCount===count} onClick={()=>setLiveCount(count)}>{count} live frames</button>)}
+      <button aria-pressed={mode==='prototype'} onClick={()=>setMode('prototype')}>Enable interactions</button>
+      <button aria-pressed={mode==='edit'} onClick={()=>setMode('edit')}>Select elements</button>
+    </header>}
+    <div style={{display:'grid',gridTemplateColumns:memoryMode?'minmax(0,1fr) 350px':'1fr 350px',gap:20}}>
+      <div style={{position:'relative',height:memoryMode?540:undefined}}>{url&&liveCount>0&&<PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="action" title="Mapped Vite preview" mode={mode} scroll={scrolls.action} onScroll={value=>saveScroll('action',value)} inspectCommand={{sequence}} onInspection={value=>{snapshot=value;setInspection(value);}} style={memoryMode?{width:1440,height:900,transform:'scale(.6)',transformOrigin:'top left'}:{width:'100%',height:500}}/>}</div>
       <LiveInspector workspaceId={id} frameId="action" editorIO={editorIO} onTextApplied={notice=>events.push({textEdit:notice})} tab="design" available={Boolean(url)} inspection={inspection} onRefresh={()=>setSequence(sequence+1)} onSelect={()=>{}} onSource={anchor=>void open(anchor)} onDiscuss={()=>{}}/>
     </div><pre id="opened">{opened}</pre><p role="alert">{error}</p>
-    {url&&new URLSearchParams(location.search).has('editor')&&<div style={{position:'relative'}}><PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="comparison" title="Shared mobile component" onScroll={()=>{}} style={{width:390,height:300}}/></div>}
+    {url&&liveCount>1&&<div style={{position:'relative'}}><PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="comparison" title="Shared mobile component" scroll={scrolls.comparison} onScroll={value=>saveScroll('comparison',value)} style={{width:390,height:memoryMode?844:300}}/></div>}
+    {url&&liveCount>2&&<div style={{position:'relative'}}><PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="tablet" title="Shared tablet component" scroll={scrolls.tablet} onScroll={value=>saveScroll('tablet',value)} style={{width:768,height:1024}}/></div>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Fixture/>);
