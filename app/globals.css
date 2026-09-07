@@ -2,6 +2,43 @@
 @import "./enhancements.css";
 @import "./canvas-clarity.css";
 
+/* Real-page inspection: concise values, explicit mapping limits. */
+.live-inspector { font-size: .875rem; }
+.live-inspector-tools, .live-inspector-tools > span, .live-inspector-copy header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.live-inspector-tools { margin:0 0 16px; }
+.live-inspector .icon-control { position:relative; display:flex; flex:none; }
+.live-inspector .icon-control > button { width:32px; height:32px; display:grid; place-items:center; border:0; border-radius:6px; background:transparent; cursor:pointer; }
+.live-inspector .icon-control > button:focus-visible { outline-offset:-2px; }
+.floating-control-hint { position:fixed; z-index:1000; width:210px; padding:11px 13px; border:1px solid #dedee2; border-radius:11px; background:#fff; box-shadow:0 8px 28px #17181c1a; color:#24262a; font-size:14px; line-height:1.4; }
+.floating-control-hint::before { content:''; position:absolute; width:10px; height:10px; background:#fff; top:10px; right:-6px; transform:rotate(45deg); border-top:1px solid #dedee2; border-right:1px solid #dedee2; }
+.floating-control-hint strong, .floating-control-hint span { display:block; }
+.floating-control-hint span { margin-top:3px; color:#61646a; }
+.live-inspector-empty, .live-source-empty { display:grid; gap:12px; justify-items:start; padding:24px 16px; color:#62656a; }
+.live-inspector-empty p, .live-source-empty p { font-size:1rem; margin:0; }
+.live-source-empty small { font-size:.8125rem; }
+.live-dom-layers { display:flex; flex-direction:column; max-height:55vh; overflow:auto; }
+.live-dom-layers button { display:flex; align-items:center; gap:8px; text-align:left; min-height:38px; padding:8px; border:0; background:none; border-radius:6px; color:#282b31; }
+.live-dom-layers button span { min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.live-dom-layers small { color:#757980; font-size:.8125rem; margin-right:8px; }
+.live-dom-layers button.active { background:#edf1ff; color:#274fda; }
+.live-dom-layers button:focus-visible { outline:2px solid #315efb; outline-offset:-2px; }
+.live-selection-title { display:grid; gap:6px; overflow-wrap:anywhere; margin-bottom:16px; }
+.live-selection-title code { font-size:.8125rem; color:#62656a; }
+.live-selection-title strong { font-size:1rem; }
+.live-style-values { margin:16px 0; }
+.live-style-values > div { display:grid; grid-template-columns:65px 1fr; gap:12px; padding:7px 0; border-bottom:1px solid #eeeff1; }
+.live-style-values dt { color:#696e75; }
+.live-style-values dd { margin:0; overflow-wrap:anywhere; }
+.live-inspector-copy pre { white-space:pre-wrap; overflow-wrap:anywhere; font:inherit; max-height:160px; overflow:auto; padding:10px; background:#f5f6f8; border-radius:6px; }
+.live-inspector-copy [role=status] { font-size:.8125rem; color:#4c6554; }
+.inspection-source-note { margin-top:20px; border-top:1px solid #e4e6ea; padding-top:12px; font-size:.8125rem; color:#62656a; }
+.inspection-source-note summary { cursor:pointer; display:flex; align-items:center; gap:6px; }
+.inspection-source-note summary::after { content:''; width:6px; height:6px; transform:rotate(45deg); border-right:1px solid; border-bottom:1px solid; margin-left:auto; }
+.live-more-styles { margin:12px 0 16px; color:#62656a; font-size:.875rem; }
+.inspection-source-note svg { vertical-align:middle; margin-right:6px; }
+.inspection-source-note p, .inspection-note { line-height:1.5; font-size:.8125rem; }
+.live-discuss, .live-source-empty button, .inspection-source-note button { padding:8px 12px; border:1px solid #d8dbe1; border-radius:7px; font-size:.875rem; background:white; }
+
 :root { --ink: #202225; --muted: #72757c; --line: #deded9; --panel: #f7f7f4; --canvas: #ececea; --accent: #ff5c35; --blue: #315efb; }
 * { box-sizing: border-box; }
 html, body { height: 100%; overflow: hidden; }

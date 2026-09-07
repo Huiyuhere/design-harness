@@ -1,21 +1,30 @@
 "use client";
 
-import { useId, useState, type ReactNode } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from 'react-dom';
 import { Check, Github, ShieldCheck, Sparkles } from "lucide-react";
 
-export function IconControl({ label, explanation, children, onClick, active, disabled, className = "" }: {
-  label: string; explanation: string; children?: ReactNode; onClick?: () => void; active?: boolean; disabled?: boolean; className?: string;
+export function IconControl({ label, explanation, children, onClick, active, disabled, className = "", floating = false }: {
+  label: string; explanation: string; children?: ReactNode; onClick?: () => void; active?: boolean; disabled?: boolean; className?: string; floating?: boolean;
 }) {
   const id = useId();
   const [visible, setVisible] = useState(false);
-  return <div className={`icon-control ${className}`} onMouseEnter={() => setVisible(true)} onMouseLeave={() => setVisible(false)}>
-    <button type="button" aria-label={label} aria-describedby={visible ? id : undefined} aria-pressed={active} aria-disabled={disabled || undefined}
-      className={active ? "active" : ""} onFocus={() => setVisible(true)} onBlur={() => setVisible(false)}
+  const trigger = useRef<HTMLButtonElement>(null);
+  const leaveTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const [position, setPosition] = useState({ left: 0, top: 0 });
+  const show = () => { clearTimeout(leaveTimer.current); const rect = trigger.current?.getBoundingClientRect(); const boundary = trigger.current?.closest('[data-tooltip-boundary]')?.getBoundingClientRect(); if (floating && rect) setPosition({ left: Math.max(8, (boundary?.left ?? rect.left) - 222), top: Math.max(8, Math.min(innerHeight - 140, rect.top)) }); setVisible(true); };
+  const leave = () => { if (floating) leaveTimer.current = setTimeout(() => setVisible(false), 150); else setVisible(false); };
+  useEffect(() => () => clearTimeout(leaveTimer.current), []);
+  useEffect(() => { if (!visible || !floating) return; const close = () => setVisible(false); window.addEventListener('scroll', close, true); window.addEventListener('resize', close); return () => { window.removeEventListener('scroll', close, true); window.removeEventListener('resize', close); }; }, [visible, floating]);
+  const hint = <div className={floating ? 'floating-control-hint' : 'control-hint'} role="tooltip" id={id} style={floating ? position : undefined} onMouseEnter={() => clearTimeout(leaveTimer.current)} onMouseLeave={leave}><strong>{label}</strong><span>{explanation}</span></div>;
+  return <div className={`icon-control ${className}`} onMouseEnter={show} onMouseLeave={leave}>
+    <button ref={trigger} type="button" aria-label={label} aria-describedby={visible ? id : undefined} aria-pressed={active} aria-disabled={disabled || undefined}
+      className={active ? "active" : ""} onFocus={show} onBlur={() => setVisible(false)}
       onKeyDown={event => { if (event.key === "Escape") { setVisible(false); event.stopPropagation(); } }}
       onClick={() => { if (!disabled) onClick?.(); }}>
       {children}
     </button>
-    {visible && <div className="control-hint" role="tooltip" id={id}><strong>{label}</strong><span>{explanation}</span></div>}
+    {visible && (floating ? createPortal(hint, document.body) : hint)}
   </div>;
 }
 
