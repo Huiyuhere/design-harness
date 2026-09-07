@@ -62,3 +62,30 @@ export async function verifyJsxSourceAnchor(source: string, anchor: SourceAnchor
   if (await sha256(source) !== anchor.hash) throw new Error('The selected element is from an older source version. Refresh the preview and select it again.');
   return inspectJsxAnchor(source, anchor);
 }
+
+/** Explicit element-level override only. Never infer a stylesheet selector. */
+export function planJsxRadiusEdit(source:string, anchor:SourceAnchor, pixels:number) {
+  inspectJsxAnchor(source,anchor);
+  if(!Number.isFinite(pixels)||pixels<0||pixels>512)throw new Error('Choose a radius from 0 to 512 px.');
+  const node=elements(source).find(item=>item.start===anchor.start&&item.end===anchor.end)!;
+  const opening=node.openingElement as Node, attributes=opening.attributes as Node[];
+  if(attributes.some(item=>item.type==='JSXSpreadAttribute'))throw new Error('Spread props may control this style. Use a reviewed code edit.');
+  const styles=attributes.filter(item=>(item.name as Node)?.name==='style');
+  if(styles.length>1)throw new Error('Duplicate style attributes require a reviewed code edit.');
+  let start:number,end:number,after:string;
+  if(!styles.length){start=end=(opening.name as Node).end;after=` style={{ borderRadius: ${pixels} }}`;}
+  else {
+    const value=styles[0].value as Node, object=value?.type==='JSXExpressionContainer'?value.expression as Node:undefined;
+    if(object?.type!=='ObjectExpression')throw new Error('Dynamic styles require a reviewed code edit.');
+    const properties=object.properties as Node[];
+    if(properties.some(item=>item.type!=='ObjectProperty'||item.computed||item.shorthand))throw new Error('Spread or computed styles require a reviewed code edit.');
+    const key=(item:Node)=>{const k=item.key as Node;return k.type==='Identifier'?String(k.name):k.type==='StringLiteral'?String(k.value):'';};
+    if(properties.some(item=>/^border.*Radius$/.test(key(item))&&key(item)!=='borderRadius'))throw new Error('Individual corner rules already exist. Use a reviewed code edit.');
+    const radii=properties.filter(item=>key(item)==='borderRadius');
+    if(radii.length>1)throw new Error('Duplicate radius rules require a reviewed code edit.');
+    if(radii.length){const radius=radii[0].value as Node;if(!['StringLiteral','NumericLiteral'].includes(radius.type))throw new Error('A dynamic radius requires a reviewed code edit.');start=radius.start;end=radius.end;after=String(pixels);}
+    else {start=end=object.start+1;after=` borderRadius: ${pixels},`;}
+  }
+  const output=source.slice(0,start)+after+source.slice(end);syntax(output);
+  return {output,start,before:source.slice(start,end),after};
+}

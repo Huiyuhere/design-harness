@@ -4,9 +4,11 @@ import { build } from 'vite';
 import react from '@vitejs/plugin-react';
 import { createServer } from 'node:http';
 import { readFile,writeFile } from 'node:fs/promises';
+import {radiusChecks} from './radius-checks';
 
 const editorMode=process.argv.includes('--editor');
-const report={at:new Date().toISOString(),scope:`Real WebContainer + Vite 6.4.1 + production PreviewSession/PreviewFrame/LiveInspector/${editorMode?'MappedTextEditor UI':'source helper'}. Synthetic fixture, not hosted private import, paid agent execution or production pixel verification.`,checks:[] as string[],errors:[] as string[],expectedErrors:[] as string[],events:[] as unknown[],failure:undefined as string|undefined,diagnostics:undefined as unknown};
+const radiusMode=process.argv.includes('--radius');
+const report={at:new Date().toISOString(),scope:`Real WebContainer + Vite 6.4.1 + production PreviewSession/PreviewFrame/LiveInspector/${radiusMode?'MappedRadiusEditor UI':editorMode?'MappedTextEditor UI':'source helper'}. Synthetic fixture, not hosted private import, paid agent execution or production pixel verification.`,checks:[] as string[],errors:[] as string[],expectedErrors:[] as string[],events:[] as unknown[],failure:undefined as string|undefined,diagnostics:undefined as unknown};
 await build({configFile:false,publicDir:false,plugins:[react()],define:{'process.env.NODE_ENV':'"production"'},logLevel:'error',build:{outDir:'outputs/audit/source-anchor-dist',emptyOutDir:true,lib:{entry:'tests/browser/source-anchor-fixture.tsx',formats:['es'],fileName:()=> 'fixture.js',cssFileName:'fixture'}}});
 const directory=new URL('../../outputs/audit/source-anchor-dist/',import.meta.url);
 const headers={'Cross-Origin-Opener-Policy':'same-origin','Cross-Origin-Embedder-Policy':'credentialless'};
@@ -19,9 +21,13 @@ const server=createServer(async(req,res)=>{try{
 await new Promise<void>(resolve=>server.listen(8793,'127.0.0.1',resolve));
 const browser=await chromium.launch({headless:true,executablePath:'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome'});
 const page=await browser.newPage({viewport:{width:1440,height:1000}});
+const networkIssues:Array<{url:string;error:string}>=[];
+const safeUrl=(raw:string)=>{try{const url=new URL(raw);return url.origin+url.pathname;}catch{return 'invalid URL';}};
+page.on('requestfailed',request=>{if(networkIssues.length<15)networkIssues.push({url:safeUrl(request.url()),error:(request.failure()?.errorText??'failed').slice(0,200)});});
+page.on('response',response=>{if(response.status()>=400&&networkIssues.length<15)networkIssues.push({url:safeUrl(response.url()),error:`HTTP ${response.status()}`});});
 page.on('pageerror',error=>(editorMode&&error.message==='Intentional source render failure'?report.expectedErrors:report.errors).push(error.message));
 try{
-  await page.goto('http://127.0.0.1:8793'+(editorMode?'/?editor=1':''));await page.waitForFunction(()=>Boolean(window.anchorTest));
+  await page.goto('http://127.0.0.1:8793'+(editorMode||radiusMode?'/?editor=1':''));await page.waitForFunction(()=>Boolean(window.anchorTest));
   assert.equal(await page.evaluate(()=>crossOriginIsolated),true);
   await page.getByRole('button',{name:'Start browser runtime',exact:true}).click();
   await page.waitForFunction(()=>window.anchorTest.events.some((event)=>{const value=event as {status:string};return ['ready','error'].includes(value.status);}),{},{timeout:360_000});
@@ -42,7 +48,8 @@ try{
   assert.equal(await frame.locator('output').textContent(),'0');
   const source=await page.evaluate(path=>window.anchorTest.read(path),anchor.file);assert.ok(!source.includes('data-ah-source'));
   report.checks.push('Selecting the real button yields its component (not route guess), opening verifies file hash/AST, and authoritative source contains no instrumentation');
-  if(editorMode){
+  if(radiusMode){await radiusChecks(page,report,source,anchor);}
+  else if(editorMode){
     const mobile=page.frameLocator('iframe[title="Shared mobile component"]');await mobile.locator('#action').waitFor();
     await page.getByRole('button',{name:'Interact',exact:true}).click();await frame.locator('#action').click();assert.equal(await frame.locator('output').textContent(),'1');await page.getByRole('button',{name:'Select',exact:true}).click();
     await page.getByRole('button',{name:'Edit text',exact:true}).click();
@@ -106,11 +113,11 @@ try{
   await page.screenshot({path:'outputs/audit/live-jsx-source.png',timeout:10000});
   }
   assert.deepEqual(report.errors,[]);
-}catch(error){report.failure=String(error);process.exitCode=1;}
+}catch(error){report.failure=String(error);Object.assign(report,{networkIssues,frameUrls:page.frames().map(frame=>safeUrl(frame.url()))});await page.screenshot({path:`outputs/audit/${radiusMode?'radius':'text'}-browser-failed.png`,timeout:10000}).catch(()=>{});process.exitCode=1;}
 finally{
   report.events=await page.evaluate(()=>window.anchorTest?.events).catch(()=>[]);
   report.diagnostics=await page.evaluate(()=>window.anchorTest?.diagnostics()).catch(()=>null);
   await page.evaluate(()=>window.anchorTest?.stop()).catch(()=>undefined);
   await browser.close();server.close();
-  await writeFile(`outputs/audit/${editorMode?'source-text-editor':'source-anchor'}-browser-results.json`,JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+  await writeFile(`outputs/audit/${radiusMode?'source-radius-editor':editorMode?'source-text-editor':'source-anchor'}-browser-results.json`,JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
 }

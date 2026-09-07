@@ -1,6 +1,8 @@
 import { sha256 } from './brand-documents';
 import { boundedSource, planJsxTextEdit, planJsxLinkEdit, type SourceRange } from './jsx-source-edits';
 import type { SourcePatch } from './source-patcher';
+import { planJsxRadiusEdit } from './jsx-source-anchors';
+import type { SourceAnchor } from './source-anchor';
 
 /** Browser-safe exact replay. Never import Node's crypto implementation here. */
 export async function applyBrowserSourcePatch(source: string, patch: SourcePatch) {
@@ -20,6 +22,10 @@ export async function prepareBrowserTextPatch(source: string, before: string, af
 
 export async function prepareBrowserLinkPatch(source: string, label: string, route: string, expectedHash: string) {
   return prepareBrowserPatch(source, expectedHash, () => planJsxLinkEdit(source, label, route));
+}
+
+export async function prepareBrowserRadiusPatch(source:string,anchor:SourceAnchor,pixels:number){
+  return prepareBrowserPatch(source,anchor.hash,()=>planJsxRadiusEdit(source,anchor,pixels));
 }
 
 async function prepareBrowserPatch(source: string, expectedHash: string, planEdit: () => { output: string; start: number; before: string; after: string }) {

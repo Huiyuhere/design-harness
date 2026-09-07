@@ -61,10 +61,10 @@ function Fixture(){
     <button onClick={()=>void session.start({workspaceId:id,repositoryUrl:'https://github.com/example/source-anchor-regression',ref:'b'.repeat(40),trusted:true,onEvent:event=>{events.push(event);setStatus(event.message);if(event.url)setUrl(event.url);}}).catch(error=>setError(String(error)))}>Start browser runtime</button>
     <p role="status">{status}</p><button onClick={()=>setMode(mode==='edit'?'prototype':'edit')}>{mode==='edit'?'Interact':'Select'}</button>
     <div style={{display:'grid',gridTemplateColumns:'1fr 350px',gap:20}}>
-      {url?<PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="action" title="Mapped Vite preview" mode={mode} onScroll={()=>{}} inspectCommand={{sequence}} onInspection={value=>{snapshot=value;setInspection(value);}} style={{width:'100%',height:500}}/>:<div/>}
+      <div style={{position:'relative'}}>{url&&<PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="action" title="Mapped Vite preview" mode={mode} onScroll={()=>{}} inspectCommand={{sequence}} onInspection={value=>{snapshot=value;setInspection(value);}} style={{width:'100%',height:500}}/>}</div>
       <LiveInspector workspaceId={id} frameId="action" editorIO={editorIO} onTextApplied={notice=>events.push({textEdit:notice})} tab="design" available={Boolean(url)} inspection={inspection} onRefresh={()=>setSequence(sequence+1)} onSelect={()=>{}} onSource={anchor=>void open(anchor)} onDiscuss={()=>{}}/>
     </div><pre id="opened">{opened}</pre><p role="alert">{error}</p>
-    {url&&new URLSearchParams(location.search).has('editor')&&<PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="comparison" title="Shared mobile component" onScroll={()=>{}} style={{width:390,height:300}}/>}
+    {url&&new URLSearchParams(location.search).has('editor')&&<div style={{position:'relative'}}><PreviewFrame workspaceId={id} baseUrl={url} route="/" frameId="comparison" title="Shared mobile component" onScroll={()=>{}} style={{width:390,height:300}}/></div>}
   </main>;
 }
 createRoot(document.getElementById('root')!).render(<Fixture/>);

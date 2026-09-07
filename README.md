@@ -16,8 +16,8 @@ inspector or a successful runtime start as evidence of source synchronization.
 | Focus and zoom | Focus replaces other live instances; no fourth iframe. Below 65% zoom, no canvas iframe. Browser fixture covers a 90-frame schedule |
 | Scroll | Window and stable named nested-container offsets saved through a sender-window/origin-checked bridge. Scroll saves do not change the iframe URL. Tested with actual cross-origin browser iframes |
 | Inactive cards | Explicit placeholders until actual thumbnails exist. Imported cards no longer display fabricated page layouts |
-| DOM and visual edits | Real DOM selection, bounded Layers and computed styles. Plain Vite dev scripts support preview-only JSX anchors, Open JSX, and a static-text editor with Apply and exact Undo. Unmapped visual/agent writes remain disabled; CSS/style manipulation is not integrated |
-| Source editor | Workspace-bound reads and serialized writes with exact expected-content checks. Static-text Apply/Undo hold the writer queue through a live text/anchor check; errors, cancellation and timeouts restore prior source unless newer work makes rollback unsafe. Raw code edits do not have this render gate. Geometry/style and full transactional approval remain incomplete |
+| DOM and visual edits | Real DOM selection, bounded Layers and computed styles. Plain Vite scripts support JSX anchors, Open JSX, static text and explicitly approved inline corner-radius overrides with Apply/Undo. CSS-rule mapping, other style gestures and imported agent writes remain incomplete |
+| Source editor | Workspace-bound reads and serialized writes with exact expected-content checks. Text/corner Apply/Undo hold the writer queue through a live text/style/anchor check; errors, cancellation and timeouts restore prior source unless newer work makes rollback unsafe. Raw code edits do not have this render gate. Whole-page geometry and full transactional approval remain incomplete |
 | Patch adapters | Parsed static JSX/class spans, exact hash-bound forward/inverse patches and CSS declaration guards; unit and real React/HMR fixture tests. These are not proof of the whole inspector/agent path |
 | Agent | Personal-key streaming and approved proposals exist; selected-element execution, durable jobs and cross-workspace application need end-to-end validation |
 | Concurrency | Scheduling primitives are unit-tested. Comprehensive repository-wide write serialization is not yet integrated across every mutation path |
@@ -115,6 +115,25 @@ rejected; existing CSS still determines whether spaces and newlines are visible.
 An unsafe rollback preserves newer source and stops further writes pending
 recovery instead of overwriting it. General style gestures, persistent global
 undo/redo, agent-generated application and production parity remain incomplete.
+
+### Editing corners without hiding scope
+
+**Edit corners** offers an explicit inline JSX override from 0–512 px. The user
+must choose **Override this element at all sizes** before applying. This does
+not edit a CSS selector, Tailwind token or media query; it can supersede existing
+responsive radius rules. Shared component instances also update. No breakpoint
+or stylesheet scope is inferred silently.
+
+The selected live element must show the requested computed radius and updated
+source hash before success is reported. An `!important` conflict times out and
+rolls back. Dynamic styles, prop/object spreads, duplicate attributes and
+individual corner rules require reviewed code edits. Exact Undo checks the
+previous computed radius and refuses stale source. This is not a screenshot or
+whole-route verification gate, nor proof of the requested paid-agent path.
+
+Preview initialization also tolerates suspended animation-frame callbacks in
+offscreen comparisons; font waiting remains bounded and scroll is restored
+before readiness. It does not pretend to restore arbitrary React state.
 
 ## Safety model
 

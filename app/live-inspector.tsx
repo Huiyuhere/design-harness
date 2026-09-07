@@ -7,6 +7,7 @@ import type { PreviewInspection } from '../lib/preview-inspection';
 import type { SourceAnchor } from '../lib/source-anchor';
 import { MappedTextEditor,type TextEditNotice } from './mapped-text-editor';
 import type { TextEditorIO } from '../lib/mapped-text-editor';
+import { MappedRadiusEditor } from './mapped-radius-editor';
 
 export function LiveInspector({ tab, inspection, available, onRefresh, onSelect, onSource, onDiscuss, workspaceId,frameId,editorIO,onTextApplied }: {
   tab: 'design' | 'layers'; inspection: PreviewInspection | null; available: boolean;
@@ -32,9 +33,10 @@ export function LiveInspector({ tab, inspection, available, onRefresh, onSelect,
         {selected.text && <section className="live-inspector-copy"><header><span>Text</span><IconControl floating label="Copy element text" explanation="Copy the selected element’s visible text, not its source code." onClick={() => { void navigator.clipboard.writeText(selected.text).then(() => setCopyStatus('Copied'), () => setCopyStatus('Copy unavailable')); }}><Copy size={15} aria-hidden="true" /></IconControl></header><pre>{selected.text}</pre><span role="status">{copyStatus}</span></section>}
         {selected.source&&workspaceId&&frameId&&inspection&&<MappedTextEditor key={`${workspaceId}:${frameId}:${inspection.generation}:${selected.id}`} target={{workspaceId,frameId,nodeId:selected.id,generation:inspection.generation,anchor:selected.source,observedText:selected.text}} io={editorIO} onApplied={onTextApplied}/>}
         <dl className="live-style-values">{pairs.slice(0, 6).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+        {selected.source&&workspaceId&&frameId&&inspection&&<MappedRadiusEditor key={`radius:${workspaceId}:${frameId}:${inspection.generation}:${selected.id}`} target={{workspaceId,frameId,nodeId:selected.id,generation:inspection.generation,anchor:selected.source}} radius={selected.styles.borderRadius} io={editorIO} onApplied={onTextApplied}/>}
         <details className="live-more-styles"><summary>More styles</summary><dl className="live-style-values">{pairs.slice(6).map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>
         <div className="live-inspector-tools"><button className="live-discuss" onClick={onDiscuss}>Discuss element</button>{selected.source && <IconControl floating label="Open JSX" explanation="Check the source hash and open this element’s actual component. This does not apply an edit." onClick={() => onSource(selected.source!)}><Code2 size={17} aria-hidden="true" /></IconControl>}</div>
       </> : <div className="live-inspector-empty"><MousePointer2 size={24} aria-hidden="true" /><p>Select an element in Edit mode.</p></div>}
-    <details className="inspection-source-note"><summary><ShieldCheck size={14} aria-hidden="true" />{selected?.source?'Editing limits':'Inspect only'}</summary><p>{selected?.source ? 'Static text can be edited after a source check. Visual style editing is not supported yet. Open JSX opens the actual component.' : 'These are real DOM values. This element has no supported source marker, so visual edits are disabled. The route file may not be the selected component.'}</p><button onClick={() => onSource()} disabled={!available}>Open route source</button></details>
+    <details className="inspection-source-note"><summary><ShieldCheck size={14} aria-hidden="true" />{selected?.source?'Editing limits':'Inspect only'}</summary><p>{selected?.source ? 'Static text and explicit inline corner overrides have live checks. Other visual styles require a reviewed code edit. Open JSX opens the actual component.' : 'These are real DOM values. This element has no supported source marker, so visual edits are disabled. The route file may not be the selected component.'}</p><button onClick={() => onSource()} disabled={!available}>Open route source</button></details>
   </div>;
 }

@@ -15,6 +15,10 @@
 .mapped-text-editor [role=alert] { color:#ae2c22; font-size:.875rem; line-height:1.5; }
 .mapped-text-editor [role=status] { color:#40614a; font-size:.875rem; }
 .mapped-text-editor details { font-size:.8125rem; color:#62656a; margin-top:10px; overflow-wrap:anywhere; }
+.mapped-radius-editor > input[type=number] { width:100%; padding:10px; border:1px solid #d8dbe1; border-radius:8px; font:inherit; }
+.mapped-radius-editor .radius-scope { display:flex; align-items:flex-start; gap:8px; font-weight:400; line-height:1.4; margin:12px 0 8px; }
+.radius-scope input { margin-top:3px; flex:none; }
+.mapped-radius-editor .mapped-text-actions { flex-wrap:wrap; }
 .live-inspector-tools, .live-inspector-tools > span, .live-inspector-copy header { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .live-inspector-tools { margin:0 0 16px; }
 .live-inspector .icon-control { position:relative; display:flex; flex:none; }

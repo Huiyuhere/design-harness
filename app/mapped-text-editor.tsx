@@ -8,7 +8,7 @@ const runtimeIO:TextEditorIO={
   async read(workspaceId,path){return (await import('../lib/live-preview-client')).readLiveSource(workspaceId,path);},
   async apply(workspaceId,changes,validate){return (await import('../lib/live-preview-client')).applyLiveSourceChanges(workspaceId,changes,validate);},
 };
-export type TextEditNotice={file:string;before:string;after:string;undo:boolean};
+export type TextEditNotice={file:string;before:string;after:string;undo:boolean;property?:'borderRadius'};
 export function MappedTextEditor({target,io=runtimeIO,onApplied}:{target:TextEditTarget;io?:TextEditorIO;onApplied?(notice:TextEditNotice):void}) {
   const fieldId=useId();
   const [snapshot,setSnapshot]=useState<TextEditSnapshot|null>(null),[draft,setDraft]=useState(''),[last,setLast]=useState<AppliedTextEdit|null>(null),[busy,setBusy]=useState(false),[message,setMessage]=useState(''),[error,setError]=useState('');

@@ -1,10 +1,11 @@
 import { z } from 'zod';
-import { sourceAnchorSchema, type SourceAnchor } from './source-anchor';
+import { sourceAnchorSchema } from './source-anchor';
 
 export const sourceExpectationSchema = z.object({
   nodeId:z.string().regex(/^n[1-9][0-9]{0,8}$/), generation:z.string().uuid(),
-  anchor:sourceAnchorSchema, text:z.string().max(2000),
-});
+  anchor:sourceAnchorSchema, text:z.string().max(2000).optional(),
+  styles:z.object({borderRadius:z.string().min(1).max(120)}).strict().optional(),
+}).refine(value=>value.text!==undefined||value.styles!==undefined,'A render expectation is required.');
 export type SourceExpectation = z.infer<typeof sourceExpectationSchema>;
 type ValidationPort = { validate(expected:SourceExpectation,signal:AbortSignal):Promise<void>; dispose():void };
 const ports = new Map<string,ValidationPort>();
@@ -33,7 +34,7 @@ export function connectPreviewValidation(workspaceId:string,frameId:string,sourc
       return new Promise<void>((resolve,reject)=>{
         const requestId=crypto.randomUUID();
         const abort=()=>finish(new DOMException('Edit cancelled.','AbortError'));
-        const timer=setTimeout(()=>finish(new Error('The page did not show the expected text in time. Previous source was restored.')),15_000);
+        const timer=setTimeout(()=>finish(new Error('The page did not show the expected change in time. Previous source was restored.')),15_000);
         const finish=(error?:Error)=>{if(pending?.requestId!==requestId)return;clearTimeout(timer);signal.removeEventListener('abort',abort);pending=null;send({type:'agent-harness:cancel-source-validation',requestId});if(error)reject(error);else resolve();};
         pending={requestId,finish};signal.addEventListener('abort',abort,{once:true});
         send({type:'agent-harness:validate-source',requestId,expected});
@@ -44,7 +45,7 @@ export function connectPreviewValidation(workspaceId:string,frameId:string,sourc
   ports.set(id,port);return ()=>port.dispose();
 }
 
-export function validatePreviewSource(workspaceId:string,frameId:string,expected:{nodeId:string;generation:string;anchor:SourceAnchor;text:string},signal:AbortSignal) {
+export function validatePreviewSource(workspaceId:string,frameId:string,expected:SourceExpectation,signal:AbortSignal) {
   const port=ports.get(key(workspaceId,frameId));
   if(!port)return Promise.reject(new Error('Open this page live before applying the edit.'));
   return port.validate(expected,signal);

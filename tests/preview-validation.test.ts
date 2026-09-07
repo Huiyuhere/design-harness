@@ -15,6 +15,11 @@ test('source validation rejects malformed targets and disconnected workspaces',a
   assert.equal(sourceExpectationSchema.safeParse({...expected,text:'x'.repeat(2001)}).success,false);
   await assert.rejects(validatePreviewSource('missing','missing',expected,new AbortController().signal),/Open this page/);
 });
+test('style validation allows only the bounded radius expectation and requires a check',()=>{
+  assert.equal(sourceExpectationSchema.safeParse({...expected,text:undefined,styles:{borderRadius:'24px'}}).success,true);
+  for(const styles of [{color:'red'},{borderRadius:'24px',position:'fixed'},{borderRadius:'x'.repeat(121)},{borderRadius:''}])assert.equal(sourceExpectationSchema.safeParse({...expected,text:undefined,styles}).success,false);
+  assert.equal(sourceExpectationSchema.safeParse({...expected,text:undefined}).success,false);
+});
 test('only the exact sender, origin, frame and request can complete an edit',async()=>{
   const f=fixture();try{let done=false;const pending=validatePreviewSource('workspace','frame',expected,new AbortController().signal).then(()=>{done=true;});
     const requestId=f.sent[0].requestId,payload={type:'agent-harness:source-validation',frameId:'frame',requestId,status:'matched'};
